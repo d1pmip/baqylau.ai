@@ -30,6 +30,194 @@ IMG_MAX_BYTES = 3 * 1024 * 1024
 MAIN_VIOLATIONS = ("face_missing", "phone", "phone_raised", "reading_device",
                    "head_sustained", "gaze_sustained", "focus_lost", "shortcut")
 
+IMPORT_EXTS = {".xlsx", ".xlsm", ".xls", ".csv"}
+IMPORT_MAX_BYTES = 5 * 1024 * 1024
+
+HEADER_NAMES = {"фио", "ф.и.о.", "ф и о", "fullname", "full_name", "full name",
+                "name", "имя", "студент", "ученик", "fio", "аты-жөні", "аты жөні"}
+
+# Транслит кириллицы (рус + каз) в латиницу для автогенерации логинов.
+TRANSLIT = {
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "yo",
+    "ж": "zh", "з": "z", "и": "i", "й": "y", "к": "k", "л": "l", "м": "m",
+    "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
+    "ф": "f", "х": "kh", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "shch",
+    "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya",
+    "ә": "a", "ғ": "gh", "қ": "q", "ң": "ng", "ө": "o", "ұ": "u",
+    "ү": "u", "һ": "h", "і": "i",
+}
+
+PASS_ALPHABET = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+
+def _translit(s: str) -> str:
+    """Кириллица -> латиница с сохранением регистра: Иванов -> Ivanov."""
+    out = []
+    for ch in s:
+        t = TRANSLIT.get(ch.lower(), ch)
+        if ch.isupper() and t:
+            t = t[0].upper() + t[1:]
+        out.append(t)
+    return "".join(out)
+
+
+def _make_login(full_name: str, taken: set) -> str | None:
+    """Логин вида Фамилия_И_О латиницей: «Иванов Иван Иванович» -> Ivanov_I_I.
+    При коллизии — числовой суффикс: Ivanov_I_I2, …"""
+    import re
+
+    words = [w for w in re.split(r"\s+", full_name.strip()) if w]
+    clean = lambda w: re.sub(r"[^A-Za-z0-9]", "", _translit(w))
+    parts = [p for p in (clean(w) for w in words) if p]
+    if not parts:
+        return None
+    if len(parts) >= 3:
+        base = f"{parts[0]}_{parts[1][:1]}_{parts[2][:1]}"
+    elif len(parts) == 2:
+        base = f"{parts[0]}_{parts[1][:1]}"
+    else:
+        base = parts[0]
+    login, i = base, 2
+    while login in taken:
+        login = f"{base}{i}"
+        i += 1
+    taken.add(login)
+    return login
+
+
+def _gen_password(n: int = 8) -> str:
+    import secrets as _s
+
+    return "".join(_s.choice(PASS_ALPHABET) for _ in range(n))
+
+
+def _norm_cell(v) -> str:
+    if v is None:
+        return ""
+    return str(v).strip()
+
+
+def _rows_to_names(rows) -> list:
+    """Импорт ФИО-онли: первая непустая ячейка строки; шапка «ФИО» пропускается."""
+    out = []
+    if not rows:
+        return out
+    start = 0
+    if rows[0] and _norm_cell(rows[0][0]).lower() in HEADER_NAMES:
+        start = 1
+    for r in rows[start:]:
+        name = _norm_cell(r[0]) if r else ""
+        if name:
+            out.append(name)
+    return out
+
+
+def _parse_csv_rows(data: bytes) -> list:
+    import csv
+    import io
+
+    text = None
+    for enc in ("utf-8-sig", "cp1251", "utf-8"):
+        try:
+            text = data.decode(enc)
+            break
+        except Exception:
+            continue
+    if text is None:
+        raise ValueError("Не удалось прочитать CSV (кодировка)")
+    sample = text[:4096]
+    delim = ";" if sample.count(";") > sample.count(",") else ","
+    if "\t" in sample and sample.count("\t") > sample.count(delim):
+        delim = "\t"
+    return [row for row in csv.reader(io.StringIO(text), delimiter=delim)]
+
+
+def _parse_xlsx_rows(data: bytes) -> list:
+    import io
+    import zipfile
+
+    # 1) openpyxl when available (best compatibility)
+    try:
+        import openpyxl  # type: ignore
+
+        wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+        ws = wb.active
+        rows = [[_norm_cell(c.value) if c.value is not None else "" for c in row]
+                for row in ws.iter_rows()]
+        wb.close()
+        return rows
+    except ImportError:
+        pass
+    # 2) stdlib fallback: xlsx is a zip of xml parts
+    try:
+        import xml.etree.ElementTree as ET
+
+        zf = zipfile.ZipFile(io.BytesIO(data))
+        try:
+            names = zf.namelist()
+        except Exception:
+            raise ValueError("Это не xlsx-файл")
+        if "xl/worksheets/sheet1.xml" not in names:
+            raise ValueError("В xlsx не найден первый лист")
+        shared: list = []
+        if "xl/sharedStrings.xml" in names:
+            root = ET.fromstring(zf.read("xl/sharedStrings.xml"))
+            for si in root.iter():
+                if si.tag.endswith("}t") or si.tag == "t":
+                    shared.append("".join(t.text or "" for t in [si]))
+            # NOTE: rich-text runs produce several <t> per <si>; rebuild properly:
+            shared = []
+            for si in root:
+                parts = [n.text or "" for n in si.iter()
+                         if n.tag.endswith("}t") or n.tag == "t"]
+                shared.append("".join(parts))
+
+        def col_idx(ref: str) -> int:
+            n = 0
+            for ch in ref:
+                if ch.isalpha():
+                    n = n * 26 + (ord(ch.upper()) - 64)
+                else:
+                    break
+            return max(0, n - 1)
+
+        sroot = ET.fromstring(zf.read("xl/worksheets/sheet1.xml"))
+        rows: list = []
+        for row in sroot.iter():
+            if not (row.tag.endswith("}row") or row.tag == "row"):
+                continue
+            cells: dict = {}
+            for c in row:
+                if not (c.tag.endswith("}c") or c.tag == "c"):
+                    continue
+                t = c.attrib.get("t", "")
+                ref = c.attrib.get("r", "A1")
+                val = ""
+                if t == "s":
+                    for v in c:
+                        if v.tag.endswith("}v") or v.tag == "v":
+                            try:
+                                val = shared[int((v.text or "0").strip())]
+                            except Exception:
+                                val = ""
+                elif t == "inlineStr":
+                    val = "".join(n.text or "" for n in c.iter()
+                                   if n.tag.endswith("}t") or n.tag == "t")
+                else:
+                    for v in c:
+                        if v.tag.endswith("}v") or v.tag == "v":
+                            val = (v.text or "").strip()
+                    if not val:
+                        val = "".join(n.text or "" for n in c.iter()
+                                       if n.tag.endswith("}t") or n.tag == "t")
+                cells[col_idx(ref)] = val
+            if cells:
+                width = max(cells) + 1
+                rows.append([_norm_cell(cells.get(i, "")) for i in range(width)])
+        return rows
+    except zipfile.BadZipFile:
+        raise ValueError("Это не xlsx-файл")
+
 
 def create_app(db_path: str = DB) -> Flask:
     d.init_db(db_path)
@@ -174,12 +362,30 @@ def create_app(db_path: str = DB) -> Flask:
         return f"{s}с" if s < 60 else f"{s // 60}м"
 
     # ---------- web: groups/students ----------
+    def _groups_page(**extra):
+        c = con()
+        try:
+            groups = c.execute("SELECT * FROM groups ORDER BY name").fetchall()
+            gcounts = {r["group_id"]: r["n"] for r in c.execute(
+                "SELECT group_id, COUNT(*) n FROM users "
+                "WHERE role='student' AND group_id IS NOT NULL GROUP BY group_id").fetchall()}
+            students = c.execute(
+                "SELECT u.*,g.name AS grp FROM users u LEFT JOIN groups g ON g.id=u.group_id "
+                "WHERE u.role='student' ORDER BY g.name,u.full_name").fetchall()
+            ctx = dict(user=me(), groups=groups, students=students, gcounts=gcounts,
+                       imported=None, skipped=0, import_error="", new_pw=None)
+            ctx.update(extra)
+            return render_template("groups.html", **ctx)
+        finally:
+            c.close()
+
     @app.route("/groups", methods=["GET", "POST"])
     @login_required("teacher", "admin")
     def groups():
-        c = con()
-        try:
-            if request.method == "POST":
+        if request.method == "POST":
+            c = con()
+            new_pw = None
+            try:
                 if request.form.get("action") == "group":
                     c.execute("INSERT OR IGNORE INTO groups(name,description) VALUES(?,?)",
                               (request.form.get("name", "").strip(),
@@ -189,26 +395,143 @@ def create_app(db_path: str = DB) -> Flask:
                     import secrets as _s
 
                     salt = _s.token_hex(8)
+                    pw = request.form.get("password", "1234") or "1234"
                     c.execute(
-                        "INSERT INTO users(username,pass_hash,salt,role,full_name,group_id)"
-                        " VALUES(?,?,?,?,?,?)",
+                        "INSERT INTO users(username,pass_hash,salt,role,full_name,group_id,pass_plain)"
+                        " VALUES(?,?,?,?,?,?,?)",
                         (request.form.get("username", "").strip(),
-                         d.hash_password(request.form.get("password", "1234"), salt),
+                         d.hash_password(pw, salt),
                          salt, "student", request.form.get("full_name", ""),
-                         int(request.form.get("group_id") or 0) or None))
+                         int(request.form.get("group_id") or 0) or None, pw))
                     c.commit()
+                elif request.form.get("action") == "reset_pw":
+                    import secrets as _s
+
+                    try:
+                        sid = int(request.form.get("id", 0))
+                    except Exception:
+                        sid = 0
+                    row = c.execute(
+                        "SELECT id, username, full_name FROM users WHERE id=? AND role='student'",
+                        (sid,)).fetchone() if sid else None
+                    if row is None:
+                        return redirect(url_for("groups", error="Ученик не найден"))
+                    pw = _gen_password()
+                    salt = _s.token_hex(8)
+                    c.execute("UPDATE users SET pass_hash=?, salt=?, pass_plain=? WHERE id=?",
+                              (d.hash_password(pw, salt), salt, pw, sid))
+                    c.commit()
+                    d.audit(c, me()["username"], "password_reset", row["username"])
+                    new_pw = {"full_name": row["full_name"], "username": row["username"],
+                              "password": pw}
                 elif request.form.get("action") == "del_student":
                     c.execute("DELETE FROM users WHERE id=? AND role='student'",
                               (int(request.form.get("id", 0)),))
                     c.commit()
-                return redirect(url_for("groups"))
-            groups = c.execute("SELECT * FROM groups ORDER BY name").fetchall()
-            students = c.execute(
-                "SELECT u.*,g.name AS grp FROM users u LEFT JOIN groups g ON g.id=u.group_id "
-                "WHERE u.role='student' ORDER BY g.name,u.full_name").fetchall()
-            return render_template("groups.html", user=me(), groups=groups, students=students)
+                elif request.form.get("action") == "del_group":
+                    try:
+                        gid = int(request.form.get("id", 0))
+                    except Exception:
+                        gid = 0
+                    if gid:
+                        busy = c.execute(
+                            "SELECT COUNT(*) n FROM sessions WHERE group_id=? AND status='active'",
+                            (gid,)).fetchone()["n"]
+                        if busy:
+                            return redirect(url_for(
+                                "groups",
+                                error="Группа занята активной сессией — сначала завершите экзамен"))
+                        c.execute("UPDATE users SET group_id=NULL WHERE group_id=?", (gid,))
+                        c.execute("DELETE FROM groups WHERE id=?", (gid,))
+                        c.commit()
+                        d.audit(c, me()["username"], "group_delete", str(gid))
+            finally:
+                c.close()
+            if new_pw is not None:
+                return _groups_page(new_pw=new_pw)
+            return redirect(url_for("groups"))
+        try:
+            imported = request.args.get("imported")
+            imported = int(imported) if imported is not None else None
+        except Exception:
+            imported = None
+        try:
+            skipped = int(request.args.get("skipped", 0) or 0)
+        except Exception:
+            skipped = 0
+        return _groups_page(imported=imported, skipped=skipped,
+                            import_error=request.args.get("error", ""))
+
+    @app.route("/groups/import", methods=["POST"])
+    @login_required("teacher", "admin")
+    def groups_import():
+        f = request.files.get("file")
+        if not f or not f.filename:
+            return redirect(url_for("groups", error="Выберите файл .xlsx или .csv"))
+        try:
+            gid = int(request.form.get("group_id", 0) or 0)
+        except Exception:
+            gid = 0
+        c = con()
+        try:
+            grow = c.execute("SELECT id, name FROM groups WHERE id=?", (gid,)).fetchone()
         finally:
             c.close()
+        if grow is None:
+            return redirect(url_for("groups", error="Выберите группу, в которую загрузить"))
+        ext = os.path.splitext(f.filename)[1].lower()
+        if ext == ".xls":
+            return redirect(url_for("groups", error="Старый формат .xls: сохраните как .xlsx или .csv"))
+        if ext not in IMPORT_EXTS:
+            return redirect(url_for("groups", error="Нужен файл .xlsx или .csv"))
+        try:
+            data = f.read()
+        except Exception:
+            return redirect(url_for("groups", error="Не удалось прочитать файл"))
+        if not data or len(data) > IMPORT_MAX_BYTES:
+            return redirect(url_for("groups", error="Файл пустой или больше 5 МБ"))
+        try:
+            rows = _parse_csv_rows(data) if ext == ".csv" else _parse_xlsx_rows(data)
+            names = _rows_to_names(rows)
+        except ValueError as e:
+            return redirect(url_for("groups", error=str(e) or "Не удалось разобрать файл"))
+        except Exception:
+            logger.exception("students import parse failed")
+            return redirect(url_for("groups", error="Не удалось разобрать файл"))
+        if not names:
+            return redirect(url_for("groups", error="В файле нет ФИО"))
+        import secrets as _s
+
+        c = con()
+        try:
+            taken = {r["username"] for r in
+                     c.execute("SELECT username FROM users").fetchall()}
+            n_ok = 0
+            skipped_names = []
+            for full_name in names[:5000]:
+                login = _make_login(full_name, taken)
+                if not login:
+                    skipped_names.append(full_name)
+                    continue
+                password = _gen_password()
+                salt = _s.token_hex(8)
+                try:
+                    c.execute(
+                        "INSERT INTO users(username,pass_hash,salt,role,full_name,group_id,pass_plain)"
+                        " VALUES(?,?,?,?,?,?,?)",
+                        (login, d.hash_password(password, salt),
+                         salt, "student", full_name, gid, password))
+                    n_ok += 1
+                except Exception:
+                    skipped_names.append(full_name)
+            c.commit()
+            d.audit(c, me()["username"], "students_import",
+                    f"file={f.filename} group={grow['name']} "
+                    f"imported={n_ok} skipped={len(skipped_names)}")
+        finally:
+            c.close()
+        # Пароли видны в общей таблице учеников — разовый блок больше не нужен.
+        return _groups_page(imported=n_ok, skipped=len(skipped_names))
 
     # ---------- web: exams ----------
     @app.route("/exams")

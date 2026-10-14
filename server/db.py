@@ -67,6 +67,13 @@ def init_db(db_path: str) -> None:
       kind TEXT DEFAULT '', detail TEXT DEFAULT '');
     """)
     con.commit()
+    # Миграция старых баз: видимый пароль ученика (хеш необратим — без колонки
+    # показать пароль в таблице невозможно).
+    try:
+        cur.execute("ALTER TABLE users ADD COLUMN pass_plain TEXT DEFAULT ''")
+        con.commit()
+    except Exception:
+        pass
     # seed admin/admin123 on first run
     row = cur.execute("SELECT id FROM users WHERE username='admin'").fetchone()
     if row is None:

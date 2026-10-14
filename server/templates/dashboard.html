@@ -6,23 +6,24 @@
     <div class="ctrl">
       <form method="post" action="/session/start" style="display:contents" id="startForm">
       <select class="sel-exam" name="exam_id" aria-label="Экзамен">{% for e in exams %}<option value="{{ e.id }}">{{ e.title }} ({{ e.subject }})</option>{% endfor %}</select>
-      <select name="group_id" aria-label="Группа">{% for g in groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}</select>
-      <button class="btn go" type="submit" id="go">▶ Запустить</button>
+      <select name="group_id" aria-label="Группа">{% if groups %}{% for g in groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}{% else %}<option value="" disabled selected>Группы нет</option>{% endif %}</select>
+      <button class="btn go" type="submit" id="go"><span class="msr">play_arrow</span> Запустить</button>
       </form>
       <form method="post" action="/session/stop" style="display:contents" id="stopForm">
       <button class="btn stop" type="submit" id="stop" disabled><span>Завершить</span></button>
       </form>
     </div>
   </div>
-  <div class="kpi lav"><span class="ic"><svg width="18" height="18"><use href="#i-signal"/></svg></span><span class="lb">На связи</span><span class="n" id="kOn">—</span><span class="sub" id="kOnS"></span></div>
-  <div class="kpi yel" id="kRiskBox"><span class="ic"><svg width="18" height="18"><use href="#i-chart"/></svg></span><span class="lb">Средний риск</span><span class="n" id="kRisk">—</span><span class="sub" id="kRiskS"></span></div>
-  <div class="kpi pink"><span class="ic"><svg width="18" height="18"><use href="#i-bell"/></svg></span><span class="lb">Уведомления</span><span class="n" id="kNt">0</span><span class="sub">требуют реакции</span></div>
+  <div class="kpi lav"><span class="ic"><span class="msr">signal_cellular_alt</span></span><span class="lb">На связи</span><span class="n" id="kOn">—</span><span class="sub" id="kOnS"></span></div>
+  <div class="kpi yel" id="kRiskBox"><span class="ic"><span class="msr">bar_chart</span></span><span class="lb">Средний риск</span><span class="n" id="kRisk">—</span><span class="sub" id="kRiskS"></span></div>
+  <div class="kpi pink"><span class="ic"><span class="msr">notifications</span></span><span class="lb">Уведомления</span><span class="n" id="kNt">0</span><span class="sub">требуют реакции</span></div>
 </section>
 
 <div class="cols">
   <section>
     <div class="bar">
       <h2>Студенты</h2>
+      <select id="fGroup" class="sel-group" aria-label="Фильтр по группе"><option value="all">Все группы</option></select>
       <button class="chip" data-f="all" aria-pressed="true">Все</button>
       <button class="chip" data-f="on" aria-pressed="false">Онлайн</button>
       <button class="chip" data-f="risk" aria-pressed="false">С риском</button>
@@ -41,8 +42,9 @@ gaze_off:'Взгляд мимо',gaze_sustained:'Взгляд мимо',gaze_foc
 shortcut:'Горячие клавиши',focus_lost:'Уход из окна',multi_person:'Второй человек',drowsy:'Усталость',jaw:'Разговор?'};
 const lvl=r=>r>=65?['high','HIGH','var(--bad)','var(--bad)']:r>=45?['med','MEDIUM','var(--warn)','#F0A04B']:r>=20?['low','LOW','var(--ok)','#7CC24A']:['low','OK','var(--ok)','#7CC24A'];
 const faceSvg='<svg class="face" viewBox="0 0 120 80"><circle cx="60" cy="30" r="17" fill="#F3F0FF"/><path d="M22 80c0-20 17-30 38-30s38 10 38 30z" fill="#DAD3FD"/></svg>';
-let filter='all',t0=null,timer=null;
+let filter='all',fGroup='all',t0=null,timer=null;
 const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 function fmtT(ts){if(!ts)return '—';const d=new Date(ts*1000);return isNaN(d)?'—':d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}
 function tickCards(j){
   document.querySelector('a[href="/notifications"]').innerHTML='Уведомления '+(j.unseen?`<span class="badge">${j.unseen}</span>`:'');
@@ -66,7 +68,11 @@ function tickCards(j){
   $('kRisk').textContent=j.cards.length?avg:'—';
   $('kRiskS').textContent=c==='high'?'высокий':c==='med'?'средний':'низкий';
   $('kRiskBox').className='kpi '+(c==='high'?'pink':c==='med'?'yel':'lime');
-  const list=j.cards.filter(c=>filter==='all'||(filter==='on'&&/с$/.test(c.ago))||(filter==='risk'&&c.risk>30)).sort((a,b)=>b.risk-a.risk);
+  const gs=[...new Set(j.cards.map(c=>c.group))].sort();
+  const fg=$('fGroup'),prev=fGroup;
+  fg.innerHTML='<option value="all">Все группы</option>'+gs.map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join('');
+  if(gs.includes(prev)){fg.value=prev;}else{fGroup='all';fg.value='all';}
+  const list=j.cards.filter(c=>(filter==='all'||(filter==='on'&&/с$/.test(c.ago))||(filter==='risk'&&c.risk>30))&&(fGroup==='all'||c.group===fGroup)).sort((a,b)=>b.risk-a.risk);
   $('grid').innerHTML=list.length?list.map(c=>{
     const [cl,nm,col,bar]=lvl(c.risk),live=/с$/.test(c.ago);
     return `<article class="card st">
@@ -76,21 +82,35 @@ function tickCards(j){
       <div class="track"><div style="width:${Math.min(100,c.risk)}%;background:${bar}"></div><em style="left:20%"></em><em style="left:45%"></em><em style="left:65%"></em></div>
       <div class="tags">${c.violations.length?c.violations.map(v=>`<span class="tag ${/phone|reading/.test(v.kind)?'ph':''}">${LBL[v.kind]||v.kind}</span>`).join(''):'<span class="tag none">Нарушений нет</span>'}</div>
       <div class="acts"><a href="/notifications">Открыть</a><button data-w="${c.id}" data-n="${c.name}">Предупредить</button></div>
-    </article>`;}).join(''):'<div class="card empty">Здесь пока никого нет</div>';
+    </article>`;}).join(''):(fGroup==='all'&&filter==='all'?'<div class="card empty">Здесь пока никого нет</div>':'<div class="card empty">В этой группе никого не найдено</div>');
   document.querySelectorAll('[data-w]').forEach(b=>b.onclick=()=>warn(+b.dataset.w,b.dataset.n));
   $('events').innerHTML=(j.recent||[]).map(e=>{
     const col=e.kind==='RISK100'?'var(--bad)':e.kind==='warn'?'var(--warn)':'#A5AB9C';
     return `<li><i style="background:${col}"></i><div><b>${e.who}</b> — ${e.text}<small>${fmtT(e.t)}</small></div></li>`;}).join('')
     ||'<li><div>Пока тихо</div></li>';
 }
-async function tick(){try{const r=await fetch('/api/teacher/state');const j=await r.json();
-if(j.error){location.href='/login';return;}tickCards(j);}catch(e){}}
+function showOffline(){
+  document.body.classList.add('offline');
+  t0=null;$('timer').textContent='00:00';
+  $('live').classList.add('off');$('liveTxt').textContent='Оффлайн';
+  $('kOn').textContent='—';$('kOnS').textContent='оффлайн';
+  $('kRisk').textContent='—';$('kRiskS').textContent='оффлайн';
+  $('kRiskBox').className='kpi yel';
+  $('kNt').textContent='—';
+  $('go').disabled=true;$('stop').disabled=true;
+  $('grid').innerHTML='<div class="card empty">Нет связи с сервером — блоки недоступны (оффлайн)</div>';
+  $('events').innerHTML='<li><div>Нет связи с сервером</div></li>';
+}
+async function tick(){try{const r=await fetch('/api/teacher/state');if(!r.ok)throw 0;const j=await r.json();
+if(j.error){location.href='/login';return;}
+document.body.classList.remove('offline');tickCards(j);}catch(e){showOffline();}}
 async function warn(id,name){
   if(!confirm(`Отправить предупреждение ученику «${name}»?`))return;
   await fetch('/api/warn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({student_id:id})});
   tick();
 }
 document.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{filter=b.dataset.f;document.querySelectorAll('.chip').forEach(x=>x.setAttribute('aria-pressed',x===b));tick();});
+document.getElementById('fGroup').addEventListener('change',e=>{fGroup=e.target.value;tick();});
 document.getElementById('stopForm').addEventListener('submit',e=>{
   const b=document.getElementById('stop');
   if(!b.classList.contains('sure')){e.preventDefault();b.classList.add('sure');b.querySelector('span').textContent='Точно завершить?';
