@@ -1,0 +1,2 @@
+# Baqylau Web panel (teacher/admin) — minimal deps, Windows + Linux.
+Flask>=3.0.0

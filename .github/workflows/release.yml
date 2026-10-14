@@ -1,0 +1,108 @@
+name: Release builds
+
+# Отдельные поставки: сайт (панель) и приложение (ученик) + EXE в Releases.
+# Запуск: GitHub -> Actions -> Release builds -> Run workflow -> version vX.Y.Z,
+# либо запушить тег v* . Сборка идёт на windows-latest (EXE только там).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag (e.g. v1.3.0)"
+        required: true
+        default: v1.3.0
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: baqylau/requirements.txt
+
+      - name: Install deps (CPU torch to keep it slim)
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r baqylau/requirements.txt
+          pip install pyinstaller
+
+      - name: Build BaqylauStudent.exe
+        working-directory: baqylau
+        run: pyinstaller --noconfirm --clean BaqylauStudent.spec
+
+      - name: Pack student bundle
+        working-directory: baqylau
+        run: |
+          New-Item -ItemType Directory -Force pkg | Out-Null
+          Copy-Item dist/BaqylauStudent.exe pkg/
+          Copy-Item BaqylauStudent.vbs, start_student.bat pkg/
+          Compress-Archive -Path pkg/* -DestinationPath BaqylauStudent-win64.zip -Force
+
+      - name: Pack server bundle
+        working-directory: baqylau
+        run: |
+          New-Item -ItemType Directory -Force srv/BaqylauServer | Out-Null
+          Copy-Item -Recurse server srv/BaqylauServer/
+          Copy-Item start_server.bat, start_server.sh, BaqylauServer.vbs, requirements-server.txt srv/BaqylauServer/
+          Compress-Archive -Path srv/BaqylauServer -DestinationPath BaqylauServer-win64.zip -Force
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundles
+          path: |
+            baqylau/BaqylauStudent-win64.zip
+            baqylau/BaqylauServer-win64.zip
+
+  release:
+    needs: build-windows
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: bundles
+          path: bundles
+
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "name=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          name: Baqylau ${{ steps.tag.outputs.name }}
+          body: |
+            Отдельные поставки:
+
+            - **BaqylauStudent-win64.zip** — приложение ученика (только Windows):
+              распаковать, запустить `BaqylauStudent.exe` (или `BaqylauStudent.vbs`).
+              Окно открывается в полноэкранном режиме.
+            - **BaqylauServer-win64.zip** — панель преподавателя (Windows/Linux):
+              распаковать, поставить Flask (`pip install -r requirements-server.txt`),
+              запустить `start_server.bat` (Windows) или `./start_server.sh` (Linux).
+              Первый вход: `admin / admin123`.
+          files: bundles/*.zip

@@ -9,6 +9,19 @@
 
 Кейс: Qostanai Industry Hackathon, «Локальный прокторинг» · Demo Day 16.10.2026.
 
+## Скачать готовое
+
+В [Releases](https://github.com/dima-mip/baqylau.ai/releases) лежат две
+отдельные поставки:
+
+- **BaqylauStudent-win64.zip** — приложение ученика (только Windows):
+  распаковать и запустить `BaqylauStudent.exe` (окно сразу в полноэкранном
+  режиме).
+- **BaqylauServer-win64.zip** — панель преподавателя (Windows и Linux):
+  распаковать, поставить Flask (`pip install -r requirements-server.txt`),
+  запустить `start_server.bat` (Windows) или `./start_server.sh` (Linux).
+  Первый вход: `admin / admin123`.
+
 ## Как это работает
 
 - **Приложение ученика** (десктоп, PySide6): вход по логину, камера
