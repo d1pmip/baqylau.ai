@@ -80,21 +80,19 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: baqylau/requirements.txt
+          cache-dependency-path: requirements.txt
 
       - name: Install deps (CPU torch to keep it slim)
         run: |
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install -r baqylau/requirements.txt
+          pip install -r requirements.txt
           pip install pyinstaller
 
       - name: Build BaqylauStudent.exe
-        working-directory: baqylau
         run: pyinstaller --noconfirm --clean BaqylauStudent.spec
 
       - name: Pack student bundle
-        working-directory: baqylau
         run: |
           New-Item -ItemType Directory -Force pkg | Out-Null
           Copy-Item dist/BaqylauStudent.exe pkg/
@@ -102,7 +100,6 @@ jobs:
           Compress-Archive -Path pkg/* -DestinationPath BaqylauStudent-win64.zip -Force
 
       - name: Pack server bundle
-        working-directory: baqylau
         run: |
           New-Item -ItemType Directory -Force srv/BaqylauServer | Out-Null
           Copy-Item -Recurse server srv/BaqylauServer/
@@ -114,8 +111,8 @@ jobs:
         with:
           name: bundles
           path: |
-            baqylau/BaqylauStudent-win64.zip
-            baqylau/BaqylauServer-win64.zip
+            BaqylauStudent-win64.zip
+            BaqylauServer-win64.zip
 
   release-server:
     needs: [resolve, build-windows]
