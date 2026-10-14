@@ -31,18 +31,20 @@
 | Второе лицо, уход из окна экзамена, запрещённые клавиши | HIGH/MEDIUM |
 | RISK 100 | фото + ~9 с видео → уведомление + локально (+ Drive) |
 
-## Запуск (Windows)
+## Запуск
 
-**Панель (ПК преподавателя):** двойной клик `start_server.bat`
-или вручную:
+**Панель (ПК преподавателя, Windows и Linux):** двойной клик
+`start_server.bat` (Windows) или `./start_server.sh` (Linux),
+либо вручную:
 ```bash
 cd baqylau
 python -m server.app   # http://<ip>:5050, первый вход: admin / admin123
 ```
 
-**Ученик:** готовый `BaqylauStudent.exe` — из
+**Ученик (только Windows):** готовый `BaqylauStudent.exe` — из
 [Releases](https://github.com/dima-mip/baqylau.ai/releases) (не требует
-Python). Либо для разработки: `start_student.bat` / `python main_gui.py`.
+Python, окно открывается сразу в полноэкранном режиме).
+Либо `start_student.bat` / `BaqylauStudent.vbs`.
 
 Сборка EXE из исходников: `build_exe.bat` (10–20 мин, нужен интернет
 для pip). Модели (`yolov8n.pt`, `face_landmarker.task`) уже вшиты.
