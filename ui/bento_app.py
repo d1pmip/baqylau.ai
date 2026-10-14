@@ -11,24 +11,19 @@ Console logs are redirected into the alert feed / status widgets.
 from __future__ import annotations
 
 import logging
+import os
+import re
+import sys
 import time
 
-from PySide6.QtCore import QObject, QThread, Qt, Signal, QTimer
+from PySide6.QtCore import (QEasingCurve, QObject, QParallelAnimationGroup,
+                             QPropertyAnimation, QSequentialAnimationGroup,
+                             QThread, Qt, QTimer, Signal)
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
-from PySide6.QtWidgets import (
-    QApplication,
-    QFrame,
-    QGridLayout,
-    QHBoxLayout,
-    QLabel,
-    QListWidget,
-    QListWidgetItem,
-    QMainWindow,
-    QProgressBar,
-    QPushButton,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import (QApplication, QFrame, QGraphicsOpacityEffect,
+                               QGridLayout, QHBoxLayout, QLabel, QListWidget,
+                               QListWidgetItem, QMainWindow, QProgressBar,
+                               QPushButton, QSizePolicy, QVBoxLayout, QWidget)
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +33,65 @@ LEVEL_COLORS = {
     "HIGH": "#C62828",
     "CRITICAL": "#7B0000",
 }
+
+# Человекочитаемые статусы для ленты «Последние события».
+# Никаких «Риск 100» / RISK100 в UI быть не должно — только понятный текст.
+EVENT_TITLES = {
+    "phone": "Обнаружен телефон",
+    "phone_raised": "Обнаружен телефон, поднят к экрану (вероятно съёмка)",
+    "reading_device": "Взгляд вниз + телефон (вероятно чтение с устройства)",
+    "head_turn": "Обнаружен поворот головы (вероятно списывание)",
+    "head_sustained": "Голова повёрнута долго (вероятно списывание)",
+    "head_stress": "Поворот головы + стресс (вероятно списывание)",
+    "gaze_off": "Взгляд мимо экрана",
+    "gaze_sustained": "Взгляд мимо долго (вероятно шпаргалка)",
+    "gaze_focus": "Взгляд в сторону + фокус (вероятно шпаргалка)",
+    "gaze_relaxed": "Взгляд в сторону (рассеянность)",
+    "face_missing": "Лицо не в кадре",
+    "multi_person": "Обнаружено второе лицо",
+    "shortcut": "Запрещённая клавиша",
+    "focus_lost": "Уход из окна экзамена",
+    "jaw": "Возможно разговор",
+    "drowsy": "Усталость / сонливость",
+    "snapshot": "Попытка создания скриншота",
+    "snapshot_ok": "Скриншот сохранён",
+    "snapshot_fail": "Не удалось создать скриншот",
+    "evidence": "Сохранено доказательство (фото/видео)",
+    "calibration": "Калибровка",
+    "session": "Сессия",
+    "exam": "Экзамен",
+    "warn": "Предупреждение",
+}
+
+_RISK100_RE = re.compile(r"(?i)\bRISK\s*100\b|RISK100|риск\s*100\b")
+# Пути к файлам скриншотов/доказательств в деталях — ученику не показываем.
+_SHOT_PATH_RE = re.compile(
+    r"\s*\[[^\]]*(?:snapshots|SCREEN_|CRITICAL_|EVIDENCE_|\.png|\.jpg|\.mp4)[^\]]*\]",
+    re.IGNORECASE)
+
+
+def human_event_title(kind: str) -> str:
+    return EVENT_TITLES.get(str(kind or "").strip(), str(kind or "Событие"))
+
+
+def clean_event_text(text: str, fallback_kind: str = "") -> str:
+    """Убрать любые упоминания «Риск 100»/RISK100 и пути скриншотов."""
+    t = str(text or "")
+    t = _RISK100_RE.sub("", t)
+    t = _SHOT_PATH_RE.sub("", t)
+    t = re.sub(r"\s{2,}", " ", t).strip(" -:;,. ")
+    if not t:
+        return human_event_title(fallback_kind)
+    return t
+
+
+def format_feed_text(level: str, kind: str, detail: str) -> str:
+    title = human_event_title(kind)
+    body = clean_event_text(detail, fallback_kind=kind)
+    # Не дублируем заголовок, если detail уже начинается с него.
+    if body.lower().startswith(title.lower()):
+        return f"[{level}] {body}"
+    return f"[{level}] {title}: {body}" if body else f"[{level}] {title}"
 
 
 class FatigueRing(QWidget):
@@ -189,16 +243,30 @@ class BentoWindow(QMainWindow):
         self._vworker = None
         self._ethread = None
         self._eworker = None
-        # evidence ring buffer: ~9s @10fps, 320px (for RISK100 video clips)
+        # evidence ring buffer: ~9s @10fps, 320px (клипы при максимальном риске)
         from collections import deque as _dq
         self._ring = _dq(maxlen=90)
         self._ring_tick = 0
         self._last_evidence_t = 0.0
         self._last_thumb_t = 0.0
         self._thumb_interval = float(getattr(args, "thumb_interval", 4.0) or 4.0)
-        # exam widget state
+        # exam widget state (режим одного вопроса: QStackedWidget + точки)
         self._exam_deadline = 0.0
         self._exam_groups = []
+        self._exam_current = 0
+        self._exam_dots: list = []
+        self._exam_pages: list = []
+        self._exam_pixmaps: dict = {}
+        self._exam_img_labels: dict = {}
+        self._exam_badges: dict = {}
+        # анимации: переход вопросов + пульс точек + hover-тень + нажатия
+        self._exam_anim = None
+        self._exam_anim_groups: list = []
+        self._exam_nav_seq = 0
+        self._dot_anims: list = []
+        self._hover_anims: dict = {}
+        self._hover_base_pos: dict = {}
+        self._press_anims: list = []
         self._build_ui(student)
         self._build_workers()
         if standalone:
@@ -221,24 +289,29 @@ class BentoWindow(QMainWindow):
         f.setObjectName(name)
         f.setProperty("card", True)
         f.setLayout(QVBoxLayout())
-        f.layout().setContentsMargins(18, 16, 18, 16)
-        f.layout().setSpacing(10)
+        # Веб-панель: .kpi padding 18px 20px, .exam 22px 24px, gap 14-16.
+        f.layout().setContentsMargins(18, 18, 20, 18)
+        f.layout().setSpacing(12)
         return f
 
     def _build_ui(self, student: str) -> None:
         self.setWindowTitle("Baqylau — Student")
         self.resize(1240, 780)
+        self.setMinimumSize(1024, 640)
         root = QWidget()
         self.setCentralWidget(root)
         lay = QVBoxLayout(root)
+        # Веб .wrap: max-width 1240px, padding 20px 20px 28px, gap 14.
         lay.setSpacing(14)
-        lay.setContentsMargins(18, 18, 18, 18)
+        lay.setContentsMargins(20, 20, 20, 28)
 
-        # Header
+        # Header (веб .top: padding 12px 16px 12px 14px, gap 12-28, sticky-card)
         header = QFrame()
         header.setObjectName("HeaderCard")
         header.setProperty("card", True)
         hl = QHBoxLayout(header)
+        hl.setSpacing(12)
+        hl.setContentsMargins(14, 10, 16, 10)
         avatar = QLabel(student[:1].upper() or "S")
         avatar.setObjectName("Avatar")
         avatar.setAlignment(Qt.AlignCenter)
@@ -283,7 +356,8 @@ class BentoWindow(QMainWindow):
         self.video = QLabel("Ожидание камеры…")
         self.video.setObjectName("VideoLabel")
         self.video.setAlignment(Qt.AlignCenter)
-        self.video.setMinimumSize(560, 420)
+        # Веб .cam aspect-ratio 16/10, radius 14: компактное превью без giant-пустоты.
+        self.video.setMinimumSize(520, 325)
         self.video_card.layout().addWidget(self.video, 1)
         self.vision_line = QLabel("pose: —   gaze: —   persons: —")
         self.vision_line.setStyleSheet("color:#BBBBBB;")
@@ -318,19 +392,32 @@ class BentoWindow(QMainWindow):
         right.addWidget(self.fatigue_wrap)
         right.addWidget(self.risk_big)
         right.addWidget(self.risk_level)
+        # Сегмент-бар риска как .track на сайте (пороги 20/45/65/100).
+        _segs = QHBoxLayout()
+        _segs.setContentsMargins(0, 0, 0, 0)
+        _segs.setSpacing(4)
+        self._risk_segs = []
+        for _ in range(4):
+            _s = QFrame()
+            _s.setObjectName("RiskSeg")
+            _s.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            _segs.addWidget(_s)
+            self._risk_segs.append(_s)
+        right.addLayout(_segs)
         row.addLayout(right, 1)
         self.fat_card.layout().addLayout(row)
         grid.addWidget(self.fat_card, 0, 2)
 
-        # Alerts (yellow)
+        # Alerts — как веб-блок «Последние события» (aside.card.ev, padding 18px).
         self.alerts_card = self._card("AlertsCard")
-        self.alerts_card.layout().addWidget(self._mk("CardTitle", "Нарушения / Алерты"))
+        self.alerts_card.layout().addWidget(self._mk("CardTitle", "Последние события"))
         self.feed = QListWidget()
-        self.feed.setMinimumHeight(200)
+        self.feed.setMinimumHeight(180)
+        self.feed.setMaximumHeight(260)
         self.alerts_card.layout().addWidget(self.feed, 1)
         grid.addWidget(self.alerts_card, 1, 1, 1, 2)
 
-        # Exam card (visible only while a server session is active)
+        # Exam card: режим одного вопроса на весь экран (без общего скролла).
         self.exam_card = self._card("ExamCard")
         self.exam_card.layout().addWidget(self._mk("CardTitle", "Экзамен"))
         self.exam_title = QLabel("—")
@@ -338,33 +425,93 @@ class BentoWindow(QMainWindow):
         self.exam_timer = QLabel("")
         self.exam_timer.setObjectName("CardTitle")
         self.exam_card.layout().addWidget(self.exam_timer)
-        from PySide6.QtWidgets import QScrollArea
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setMinimumHeight(180)
-        scroll.viewport().setAutoFillBackground(False)
-        self.exam_body = QWidget()
-        self.exam_body.setAutoFillBackground(False)
-        self.exam_body.setLayout(QVBoxLayout())
-        scroll.setWidget(self.exam_body)
-        self.exam_card.layout().addWidget(scroll, 1)
+        from PySide6.QtWidgets import QStackedWidget
+        self.exam_progress = QLabel("")
+        self.exam_progress.setObjectName("CardTitle")
+        self.exam_progress.setAlignment(Qt.AlignCenter)
+        self.exam_card.layout().addWidget(self.exam_progress)
+        self.exam_stack = QStackedWidget()
+        self.exam_stack.setMinimumHeight(420)
+        self.exam_stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        try:
+            self.exam_stack.installEventFilter(self)
+        except Exception:
+            pass
+        self.exam_card.layout().addWidget(self.exam_stack, 1)
+        self.exam_card.setVisible(False)
+        grid.addWidget(self.exam_card, 2, 0, 1, 3)
+
+        # Отдельный нижний блок навигации по заданиям: Назад/Вперед,
+        # точки-индикаторы, отправка и статус скриншотов. Виден всегда
+        # вместе с карточкой экзамена (в т.ч. в exam-only режиме ученика).
+        self.exam_nav_card = self._card("ExamNavCard")
+        # Навигация: компактные кнопки (не на всю ширину), стиль из палитры.
+        self.btn_prev = QPushButton("← Назад")
+        self.btn_prev.setObjectName("BtnPause")
+        self.btn_next = QPushButton("Вперед →")
+        self.btn_next.setObjectName("BtnSnap")
+        for _nb in (self.btn_prev, self.btn_next):
+            _nb.setFixedHeight(34)
+            _nb.setMinimumWidth(130)
+            _nb.setMaximumWidth(180)
+            _nb.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            try:
+                _nb.installEventFilter(self)
+            except Exception:
+                pass
+        self.btn_prev.clicked.connect(self._exam_prev)
+        self.btn_next.clicked.connect(self._exam_next)
+        _nav_row = QHBoxLayout()
+        _nav_row.setContentsMargins(0, 0, 0, 0)
+        _nav_row.setSpacing(8)
+        _nav_row.addStretch(1)
+        _nav_row.addWidget(self.btn_prev)
+        _nav_row.addWidget(self.btn_next)
+        _nav_row.addStretch(1)
+        self.exam_nav_card.layout().addLayout(_nav_row)
+        # Точки-индикаторы: зелёная — текущий, серые — остальные, кликабельны.
+        _dots_wrap = QWidget()
+        _dots_wrap.setLayout(QHBoxLayout())
+        _dots_wrap.layout().setContentsMargins(0, 2, 0, 0)
+        _dots_wrap.layout().setSpacing(6)
+        _dots_wrap.layout().setAlignment(Qt.AlignCenter)
+        self._exam_dots_wrap = _dots_wrap
+        self.exam_nav_card.layout().addWidget(_dots_wrap)
         self.btn_submit = QPushButton("✔  Отправить ответы")
         self.btn_submit.setObjectName("BtnSnap")
         self.btn_submit.clicked.connect(self._submit_exam)
-        self.exam_card.layout().addWidget(self.btn_submit)
-        self.exam_card.setVisible(False)
-        grid.addWidget(self.exam_card, 2, 0, 1, 3)
+        # Веб .btn.big центрируется; в десктопе — компактная кнопка по центру.
+        self.btn_submit.setFixedHeight(38)
+        self.btn_submit.setMaximumWidth(320)
+        self.btn_submit.setMinimumWidth(220)
+        self.btn_submit.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        try:
+            self.btn_submit.installEventFilter(self)
+        except Exception:
+            pass
+        _submit_row = QHBoxLayout()
+        _submit_row.setContentsMargins(0, 2, 0, 0)
+        _submit_row.setSpacing(8)
+        _submit_row.addStretch(1)
+        _submit_row.addWidget(self.btn_submit)
+        _submit_row.addStretch(1)
+        self.exam_nav_card.layout().addLayout(_submit_row)
+        self.exam_nav_card.setVisible(False)
+        grid.addWidget(self.exam_nav_card, 3, 0, 1, 3)
 
         grid.setColumnStretch(0, 3)
         grid.setColumnStretch(1, 2)
         grid.setColumnStretch(2, 2)
         lay.addLayout(grid, 1)
 
-        # Controls
+        # Controls — компактные кнопки как веб .btn (padding 10px 18px,
+        # radius 12px), без растягивания на всю ширину.
         ctrl = QFrame()
         ctrl.setObjectName("ControlCard")
         ctrl.setProperty("card", True)
         cl = QHBoxLayout(ctrl)
+        cl.setSpacing(8)
+        cl.setContentsMargins(14, 10, 14, 10)
         self.btn_snap = QPushButton("Сделать снимок")
         self.btn_snap.setObjectName("BtnSnap")
         self.btn_calib = QPushButton("Калибровка")
@@ -377,10 +524,20 @@ class BentoWindow(QMainWindow):
         self.btn_calib.clicked.connect(self._recalibrate)
         self.btn_pause.clicked.connect(self._toggle_pause)
         self.btn_quit.clicked.connect(self.close)
+        for _b in (self.btn_snap, self.btn_calib, self.btn_pause, self.btn_quit):
+            _b.setFixedHeight(36)
+            _b.setMinimumWidth(120)
+            _b.setMaximumWidth(180)
+            _b.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            try:
+                _b.installEventFilter(self)
+            except Exception:
+                pass
         cl.addWidget(self.btn_snap)
         cl.addWidget(self.btn_calib)
         cl.addWidget(self.btn_pause)
         cl.addWidget(self.btn_quit)
+        cl.addStretch(1)
         lay.addWidget(ctrl)
         self._apply_role_view()
 
@@ -577,11 +734,13 @@ class BentoWindow(QMainWindow):
             self.risk_level.setText("Калибровка…")
             self.risk_level.setStyleSheet("color:#6B6B6B; font-size:16px; font-weight:800;")
             self.badge.setText("Калибровка…")
+            self._paint_risk_segs(0.0, "OK")
             return
         self.risk_big.setText(f"RISK {rs.score:.0f}")
         self.risk_level.setText(rs.level)
         color = LEVEL_COLORS.get(rs.level, "#1A1A1A")
         self.risk_level.setStyleSheet(f"color:{color}; font-size:16px; font-weight:800;")
+        self._paint_risk_segs(float(rs.score), rs.level)
         if rs.events:
             # Use stored BGR frame directly (no QImage->numpy conversion).
             frame = getattr(self, "_last_bgr", None)
@@ -590,22 +749,47 @@ class BentoWindow(QMainWindow):
             except Exception:
                 pass
             for ev in rs.events:
-                item = QListWidgetItem(f"[{ev.level}] {ev.kind}: {ev.detail}")
-                item.setForeground(Qt.white if ev.level == "CRITICAL" else Qt.black)
-                item.setBackground(Qt.transparent)
-                bg = {"LOW": "#E8F5E9", "MEDIUM": "#FFF3E0", "HIGH": "#FFCDD2",
-                      "CRITICAL": "#7B0000"}.get(ev.level, "#FFFFFF")
-                try:
-                    from PySide6.QtGui import QColor
-
-                    item.setBackground(QColor(bg))
-                except Exception:
-                    pass
-                self.feed.addItem(item)
-                self.feed.scrollToBottom()
-                while self.feed.count() > 200:
-                    self.feed.takeItem(0)
+                self._add_feed_item(ev.level, ev.kind, ev.detail)
         self._maybe_evidence(rs)
+
+    def _add_feed_item(self, level: str, kind: str, detail: str) -> None:
+        text = format_feed_text(level, kind, detail)
+        item = QListWidgetItem(text)
+        item.setForeground(Qt.white if level == "CRITICAL" else Qt.black)
+        item.setBackground(Qt.transparent)
+        bg = {"LOW": "#E8F5E9", "MEDIUM": "#FFF3E0", "HIGH": "#FFCDD2",
+              "CRITICAL": "#7B0000"}.get(level, "#FFFFFF")
+        try:
+            from PySide6.QtGui import QColor
+
+            item.setBackground(QColor(bg))
+        except Exception:
+            pass
+        try:
+            item.setToolTip(f"{human_event_title(kind)} · {level}")
+        except Exception:
+            pass
+        self.feed.addItem(item)
+        self.feed.scrollToBottom()
+        while self.feed.count() > 200:
+            self.feed.takeItem(0)
+
+    def _paint_risk_segs(self, score: float, level: str) -> None:
+        """4 сегмента как .track на сайте: заливка по порогам 20/45/65/100."""
+        try:
+            segs = getattr(self, "_risk_segs", []) or []
+            if not segs:
+                return
+            color = {"LOW": "#2E7D32", "MEDIUM": "#EF6C00", "HIGH": "#C62828",
+                     "CRITICAL": "#7B0000"}.get(str(level), "#2E7D32")
+            fill = sum(1 for th in (20.0, 45.0, 65.0, 100.0) if float(score) >= th - 1e-9)
+            for i, s in enumerate(segs):
+                s.setStyleSheet(
+                    f"background:{color}; border-radius:4px; min-height:8px; max-height:8px;"
+                    if i < fill else
+                    "background:#E4E4E4; border-radius:4px; min-height:8px; max-height:8px;")
+        except Exception:
+            pass
 
     def _empty_eeg(self):
         class _E:
@@ -614,18 +798,17 @@ class BentoWindow(QMainWindow):
         return _E()
 
     def _snapshot(self) -> None:
+        # Ручной снимок: файл тихо сохраняется для преподавателя
+        # (alerts.snapshot + лог), ученику ничего про скриншоты не пишем.
         try:
             frame = getattr(self, "_last_bgr", None)
             if self._risk_state is not None and frame is not None:
-                path = self.alerts.snapshot(frame, self._risk_state)
-                self._push_feed("LOW", "snapshot", f"Снимок сохранён: {path}")
+                self.alerts.snapshot(frame, self._risk_state)
         except Exception as exc:
             logger.warning("snapshot failed: %s", exc)
 
     def _push_feed(self, level: str, kind: str, detail: str) -> None:
-        item = QListWidgetItem(f"[{level}] {kind}: {detail}")
-        self.feed.addItem(item)
-        self.feed.scrollToBottom()
+        self._add_feed_item(level, kind, detail)
 
     def _recalibrate(self) -> None:
         """Кнопка: заново прогнать гидовую калибровку по 5 точкам."""
@@ -666,6 +849,10 @@ class BentoWindow(QMainWindow):
                 self._session_active = False
                 self._stop_capture()
                 self.exam_card.setVisible(False)
+                try:
+                    self.exam_nav_card.setVisible(False)
+                except Exception:
+                    pass
                 self._exam_deadline = 0.0
                 self.badge.setText("■ Экзамен завершён")
                 self._push_feed("LOW", "session", "Экзамен завершён преподавателем")
@@ -677,48 +864,651 @@ class BentoWindow(QMainWindow):
             ex = self.client.exam()
             qs = ex.get("questions", [])
             self.exam_title.setText(ex.get("title", "Экзамен"))
-            # clear old
-            while self.exam_body.layout().count():
-                it = self.exam_body.layout().takeAt(0)
-                if it.widget():
-                    it.widget().deleteLater()
-            from PySide6.QtWidgets import QButtonGroup, QLabel, QRadioButton
+            # clear old pages/dots
+            try:
+                while self.exam_stack.count():
+                    _w = self.exam_stack.widget(0)
+                    self.exam_stack.removeWidget(_w)
+                    _w.deleteLater()
+            except Exception:
+                pass
+            try:
+                _dl = self._exam_dots_wrap.layout()
+                while _dl.count():
+                    _it = _dl.takeAt(0)
+                    if _it.widget():
+                        _it.widget().deleteLater()
+            except Exception:
+                pass
+            from PySide6.QtWidgets import QButtonGroup, QLabel, QRadioButton, QVBoxLayout
 
             self._exam_groups = []
+            self._exam_pages = []
+            self._exam_dots = []
+            self._exam_pixmaps = {}
+            self._exam_img_labels = {}
+            self._exam_badges = {}
+            self._exam_current = 0
             for qi, q in enumerate(qs):
-                qtext = str(q.get("q", "")).strip() or "(вопрос без текста)"
-                qlbl = QLabel(f"{qi + 1}. {qtext}")
-                qlbl.setObjectName("ExamQ")
-                qlbl.setWordWrap(True)
-                self.exam_body.layout().addWidget(qlbl)
+                # Вопрос с картинкой-заданием: split на две половины —
+                # слева текст + варианты, справа картинка во всю высоту.
+                # Без картинки — прежняя вертикальная раскладка.
+                has_img = False
+                pm = None
                 if q.get("image"):
                     try:
                         from PySide6.QtGui import QPixmap
 
                         raw = self.client.image(q["image"]) if self.client else b""
                         if raw:
-                            pm = QPixmap()
-                            if pm.loadFromData(raw):
-                                img = QLabel()
-                                img.setPixmap(pm.scaledToWidth(
-                                    520, Qt.SmoothTransformation))
-                                img.setStyleSheet("border-radius:14px;")
-                                self.exam_body.layout().addWidget(img)
+                            _pm = QPixmap()
+                            if _pm.loadFromData(raw) and not _pm.isNull():
+                                pm = _pm
+                                has_img = True
                     except Exception as exc:
                         logger.debug("question image failed: %s", exc)
+                        has_img = False
+                from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QLabel, QRadioButton, QVBoxLayout
+
+                exam_name = str(ex.get("title", "Экзамен"))
+                qtext = str(q.get("q", "")).strip() or "(вопрос без текста)"
+                qlbl = QLabel(f"{qi + 1}. {qtext}")
+                qlbl.setObjectName("ExamQ")
+                qlbl.setWordWrap(True)
+                meta = QLabel(f"{exam_name} · вопрос {qi + 1}")
+                meta.setObjectName("ExamMeta")
+                meta.setWordWrap(True)
                 grp = QButtonGroup(self)
+                _opts: list = []
                 for oi, opt in enumerate(q.get("options", [])):
                     rb = QRadioButton(str(opt))
                     rb.setObjectName("ExamOpt")
                     grp.addButton(rb, oi)
-                    rb.toggled.connect(lambda _c, g=grp: self._paint_opts(g))
-                    self.exam_body.layout().addWidget(rb)
+                    rb.toggled.connect(lambda _c, g=grp, i=qi: (self._paint_opts(g),
+                                                               self._refresh_q_badge(i)))
+                    try:
+                        rb.installEventFilter(self)
+                    except Exception:
+                        pass
+                    _opts.append(rb)
                 self._exam_groups.append(grp)
+                if has_img and pm is not None:
+                    self._exam_pixmaps[qi] = pm
+                    page = QWidget()
+                    page.setLayout(QHBoxLayout())
+                    page.layout().setContentsMargins(8, 8, 8, 8)
+                    page.layout().setSpacing(12)
+                    left = QWidget()
+                    left.setLayout(QVBoxLayout())
+                    left.layout().setContentsMargins(0, 0, 0, 0)
+                    left.layout().setSpacing(10)
+                    left.layout().setAlignment(Qt.AlignTop)
+                    left.layout().addWidget(meta)
+                    left.layout().addWidget(qlbl)
+                    for rb in _opts:
+                        left.layout().addWidget(rb)
+                    left.layout().addStretch(1)
+                    page.layout().addWidget(left, 1)
+                    # Чёрный медиа-бокс как .cam на сайте + бейдж статуса.
+                    # Прижат к верху (вровень с вопросом), высоту диктует фото.
+                    mbox = QFrame()
+                    mbox.setObjectName("MediaBox")
+                    mbox.setLayout(QVBoxLayout())
+                    mbox.layout().setContentsMargins(10, 10, 10, 10)
+                    mbox.layout().setSpacing(8)
+                    mbox.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+                    _brow = QHBoxLayout()
+                    _brow.setContentsMargins(0, 0, 0, 0)
+                    _brow.addStretch(1)
+                    badge = QLabel(f"Вопрос {qi + 1}")
+                    badge.setObjectName("MediaBadge")
+                    badge.setProperty("done", False)
+                    _brow.addWidget(badge)
+                    mbox.layout().addLayout(_brow)
+                    img = QLabel()
+                    img.setAlignment(Qt.AlignCenter)
+                    img.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+                    img.setMinimumSize(240, 180)
+                    self._exam_img_labels[qi] = img
+                    mbox.layout().addWidget(img)
+                    self._exam_badges[qi] = badge
+                    page.layout().addWidget(mbox, 1, Qt.AlignTop)
+                else:
+                    page = QWidget()
+                    page.setLayout(QVBoxLayout())
+                    page.layout().setContentsMargins(8, 8, 8, 8)
+                    page.layout().setSpacing(10)
+                    page.layout().setAlignment(Qt.AlignTop)
+                    page.layout().addWidget(meta)
+                    page.layout().addWidget(qlbl)
+                    for rb in _opts:
+                        page.layout().addWidget(rb)
+                self._exam_pages.append(page)
+                self.exam_stack.addWidget(page)
+                # кликабельная точка-индикатор (серая 10px; активная станет
+                # зелёным овалом 26px через QSS + width-анимацию 150мс)
+                dot = QPushButton("")
+                dot.setObjectName("ExamDot")
+                dot.setMinimumSize(10, 10)
+                dot.setMaximumSize(10, 10)
+                dot.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+                dot.setProperty("active", False)
+                dot.setCursor(Qt.PointingHandCursor)
+                dot.setToolTip(f"Вопрос {qi + 1}")
+                dot.clicked.connect(lambda _c, _i=qi: self._show_exam_index(_i))
+                try:
+                    dot.installEventFilter(self)
+                except Exception:
+                    pass
+                self._exam_dots_wrap.layout().addWidget(dot)
+                self._exam_dots.append(dot)
             self._exam_deadline = (time.time() + int(ex.get("duration_min", 30)) * 60) if qs else 0.0
             self.btn_submit.setEnabled(True)
             self.exam_card.setVisible(True)
+            try:
+                self.exam_nav_card.setVisible(True)
+            except Exception:
+                pass
+            self._show_exam_index(0, animate=False)
         except Exception as exc:
             logger.warning("exam load failed: %s", exc)
+
+    def _show_exam_index(self, idx: int, animate: bool = True) -> None:
+        try:
+            n = len(self._exam_pages)
+            if n <= 0:
+                return
+            idx = max(0, min(int(idx), n - 1))
+            prev = int(self._exam_current)
+            if idx == prev and self.exam_stack.currentIndex() == idx:
+                self.exam_progress.setText(f"Вопрос {idx + 1} / {n}")
+                self._refresh_exam_dots(idx, animate=False)
+                try:
+                    self.btn_prev.setEnabled(idx > 0)
+                    self.btn_next.setText("Вперед →" if idx < n - 1 else "К концу →")
+                except Exception:
+                    pass
+                self._fit_current_image()
+                self._fit_current_image_later()
+                return
+            direction = 1 if idx > prev else -1
+            self._exam_current = idx
+            if animate:
+                self._animate_question_switch(prev, idx, direction)
+            else:
+                try:
+                    self._exam_nav_seq = int(getattr(self, "_exam_nav_seq", 0) or 0) + 1
+                except Exception:
+                    pass
+                self._stop_exam_anims()
+                self.exam_stack.setCurrentIndex(idx)
+            self.exam_progress.setText(f"Вопрос {idx + 1} / {n}")
+            self._refresh_exam_dots(idx, animate=animate, prev=prev)
+            try:
+                self.btn_prev.setEnabled(idx > 0)
+                self.btn_next.setText("Вперед →" if idx < n - 1 else "К концу →")
+            except Exception:
+                pass
+            self._fit_current_image()
+            self._fit_current_image_later()
+        except Exception as exc:
+            logger.debug("show exam index failed: %s", exc)
+
+    def _refresh_exam_dots(self, idx: int, animate: bool = True, prev: int | None = None) -> None:
+        try:
+            if prev is None:
+                prev = idx
+            for di, dot in enumerate(self._exam_dots):
+                is_active = (di == idx)
+                try:
+                    dot.setProperty("active", is_active)
+                    dot.style().unpolish(dot)
+                    dot.style().polish(dot)
+                    dot.setToolTip(f"Вопрос {di + 1}" + (" (текущий)" if is_active else ""))
+                except Exception:
+                    pass
+            if animate and prev != idx:
+                self._animate_dot_width(prev, False)
+                self._animate_dot_width(idx, True)
+            else:
+                for di, dot in enumerate(self._exam_dots):
+                    w = 26 if di == idx else 10
+                    try:
+                        dot.setMinimumWidth(w)
+                        dot.setMaximumWidth(w)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    # -- exam animations (только движение/прозрачность; цвета из палитры) --
+    def _stop_exam_anims(self) -> None:
+        """Остановить все анимации перехода и сбросить эффекты страниц."""
+        try:
+            for _g in list(getattr(self, "_exam_anim_groups", []) or []):
+                try:
+                    _g.stop()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        self._exam_anim_groups = []
+        self._exam_anim = None
+        try:
+            for _p in getattr(self, "_exam_pages", []) or []:
+                try:
+                    _p.setGraphicsEffect(None)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _animate_question_switch(self, old_idx: int, new_idx: int, direction: int = 1) -> None:
+        """Fade out старого (1.0->0.0) + fade/slide in нового за ~200-250мс.
+
+        Каждая навигация получает поколение (sid): колбэки устаревших
+        переходов молча выходят, поэтому быстрые клики не оставляют страницу
+        с opacity 0 / сдвинутой (налезание вопросов).
+        """
+        try:
+            self._exam_nav_seq = int(getattr(self, "_exam_nav_seq", 0) or 0) + 1
+            sid = self._exam_nav_seq
+            self._stop_exam_anims()
+            pages = getattr(self, "_exam_pages", [])
+            if not pages or new_idx < 0 or new_idx >= len(pages):
+                self.exam_stack.setCurrentIndex(new_idx)
+                return
+            try:
+                self.exam_stack.layout().activate()
+            except Exception:
+                pass
+            old_page = pages[old_idx] if 0 <= old_idx < len(pages) else None
+            new_page = pages[new_idx]
+            seq = QSequentialAnimationGroup(self)
+            if old_page is not None and old_idx != new_idx:
+                try:
+                    eff_out = QGraphicsOpacityEffect(old_page)
+                    old_page.setGraphicsEffect(eff_out)
+                    fade_out = QPropertyAnimation(eff_out, b"opacity", self)
+                    fade_out.setDuration(120)
+                    fade_out.setStartValue(1.0)
+                    fade_out.setEndValue(0.0)
+                    fade_out.setEasingCurve(QEasingCurve.OutCubic)
+                    seq.addAnimation(fade_out)
+                except Exception:
+                    pass
+
+            def _swap() -> None:
+                if sid != getattr(self, "_exam_nav_seq", 0):
+                    return
+                try:
+                    if old_page is not None:
+                        old_page.setGraphicsEffect(None)
+                except Exception:
+                    pass
+                try:
+                    self.exam_stack.setCurrentIndex(new_idx)
+                except Exception:
+                    pass
+
+            # fade+slide нового: параллельная группа 220мс
+            par = QParallelAnimationGroup(self)
+            try:
+                eff_in = QGraphicsOpacityEffect(new_page)
+                new_page.setGraphicsEffect(eff_in)
+                eff_in.setOpacity(0.0)
+                fade_in = QPropertyAnimation(eff_in, b"opacity", self)
+                fade_in.setDuration(220)
+                fade_in.setStartValue(0.0)
+                fade_in.setEndValue(1.0)
+                fade_in.setEasingCurve(QEasingCurve.OutCubic)
+                par.addAnimation(fade_in)
+            except Exception:
+                pass
+            try:
+                from PySide6.QtCore import QPoint as _QP
+                base_pos = new_page.pos()
+                slide = QPropertyAnimation(new_page, b"pos", self)
+                slide.setDuration(220)
+                slide.setStartValue(base_pos + _QP(40 * int(direction or 1), 0))
+                slide.setEndValue(base_pos)
+                slide.setEasingCurve(QEasingCurve.OutCubic)
+                par.addAnimation(slide)
+            except Exception:
+                pass
+
+            def _finish() -> None:
+                if sid != getattr(self, "_exam_nav_seq", 0):
+                    return
+                try:
+                    _swap()
+                except Exception:
+                    pass
+                try:
+                    par.start()
+                except Exception:
+                    pass
+
+            def _cleanup() -> None:
+                if sid != getattr(self, "_exam_nav_seq", 0):
+                    return
+                try:
+                    new_page.setGraphicsEffect(None)
+                except Exception:
+                    pass
+                try:
+                    # вернуть страницу ровно в layout-позицию после slide
+                    self.exam_stack.layout().activate()
+                except Exception:
+                    pass
+                # layout устаканился после swap — переподогнать картинку
+                try:
+                    self._fit_current_image()
+                    self._fit_current_image_later()
+                except Exception:
+                    pass
+
+            try:
+                par.finished.connect(_cleanup)
+            except Exception:
+                pass
+            if seq.animationCount() > 0:
+                try:
+                    seq.finished.connect(_finish)
+                except Exception:
+                    pass
+                self._exam_anim_groups = [seq, par]
+                self._exam_anim = seq
+                seq.start()
+            else:
+                _finish()
+                self._exam_anim_groups = [par]
+                self._exam_anim = par
+        except Exception:
+            try:
+                self.exam_stack.setCurrentIndex(new_idx)
+            except Exception:
+                pass
+
+    def _animate_dot_width(self, dot_idx: int, active: bool) -> None:
+        """Пульс точки 10px <-> 26px за 150мс (зелёный овал — активная)."""
+        try:
+            if dot_idx < 0 or dot_idx >= len(self._exam_dots):
+                return
+            dot = self._exam_dots[dot_idx]
+            target = 26 if active else 10
+            grp = QParallelAnimationGroup(self)
+            for prop in (b"minimumWidth", b"maximumWidth"):
+                try:
+                    a = QPropertyAnimation(dot, prop, self)
+                    a.setDuration(150)
+                    try:
+                        start = dot.minimumWidth() if prop == b"minimumWidth" else dot.maximumWidth()
+                    except Exception:
+                        start = 10
+                    a.setStartValue(int(start))
+                    a.setEndValue(int(target))
+                    a.setEasingCurve(QEasingCurve.OutCubic)
+                    grp.addAnimation(a)
+                except Exception:
+                    continue
+            # держать ссылку, иначе GC остановит анимацию
+            try:
+                from PySide6.QtCore import QAbstractAnimation as _QAA
+                _run = _QAA.State.Running
+                self._dot_anims = [g for g in getattr(self, "_dot_anims", [])
+                                   if g.state() == _run]
+                self._dot_anims = self._dot_anims[-8:]
+            except Exception:
+                self._dot_anims = getattr(self, "_dot_anims", [])[-8:]
+            self._dot_anims.append(grp)
+            grp.start()
+        except Exception:
+            pass
+
+    def _set_hover_shadow(self, widget, on: bool) -> None:
+        """Micro-interaction: тень плавно проявляется/гаснет (мягкий ховер).
+
+        Анимируется blurRadius 0<->12 за ~140мс — как мягкие ховеры на сайте.
+        Тень не трогает layout (сдвиг по pos рвал геометрию и накладывал
+        варианты ответов друг на друга).
+        """
+        try:
+            if widget is None:
+                return
+            from PySide6.QtWidgets import QGraphicsDropShadowEffect
+            from PySide6.QtGui import QColor as _QC
+            key = id(widget)
+            try:
+                old = self._hover_anims.get(key)
+                if old is not None:
+                    old.stop()
+            except Exception:
+                pass
+            eff = None
+            try:
+                eff = widget.graphicsEffect()
+            except Exception:
+                pass
+            if on:
+                if not isinstance(eff, QGraphicsDropShadowEffect):
+                    eff = QGraphicsDropShadowEffect(widget)
+                    eff.setOffset(0, 2)
+                    try:
+                        eff.setColor(_QC(26, 26, 26, 90))
+                    except Exception:
+                        pass
+                    try:
+                        eff.setBlurRadius(0.0)
+                    except Exception:
+                        pass
+                    widget.setGraphicsEffect(eff)
+                anim = QPropertyAnimation(eff, b"blurRadius", self)
+                anim.setDuration(140)
+                try:
+                    anim.setStartValue(float(eff.blurRadius()))
+                except Exception:
+                    anim.setStartValue(0.0)
+                anim.setEndValue(12.0)
+                anim.setEasingCurve(QEasingCurve.OutCubic)
+            else:
+                if not isinstance(eff, QGraphicsDropShadowEffect):
+                    return
+                anim = QPropertyAnimation(eff, b"blurRadius", self)
+                anim.setDuration(140)
+                try:
+                    anim.setStartValue(float(eff.blurRadius()))
+                except Exception:
+                    anim.setStartValue(12.0)
+                anim.setEndValue(0.0)
+                anim.setEasingCurve(QEasingCurve.OutCubic)
+
+                def _rm() -> None:
+                    try:
+                        cur = widget.graphicsEffect()
+                        if (isinstance(cur, QGraphicsDropShadowEffect)
+                                and float(cur.blurRadius()) <= 0.5
+                                and not widget.underMouse()):
+                            widget.setGraphicsEffect(None)
+                    except Exception:
+                        pass
+
+                try:
+                    anim.finished.connect(_rm)
+                except Exception:
+                    pass
+            self._hover_anims[key] = anim
+            anim.start()
+        except Exception:
+            pass
+
+    def _animate_press(self, widget) -> None:
+        """Анимация нажатия: мягкое погружение opacity 1->0.82->1 (~200мс).
+
+        Безопасна для layout (прозрачность, не геометрия). Тень ховера на
+        время нажатия снимается и возвращается, если курсор остался на кнопке.
+        """
+        try:
+            if widget is None:
+                return
+            from PySide6.QtWidgets import QGraphicsDropShadowEffect, QGraphicsOpacityEffect
+            try:
+                had_shadow = isinstance(widget.graphicsEffect(), QGraphicsDropShadowEffect)
+            except Exception:
+                had_shadow = False
+            eff = QGraphicsOpacityEffect(widget)
+            try:
+                eff.setOpacity(1.0)
+            except Exception:
+                pass
+            widget.setGraphicsEffect(eff)
+            grp = QSequentialAnimationGroup(self)
+            down = QPropertyAnimation(eff, b"opacity", self)
+            down.setDuration(70)
+            down.setStartValue(1.0)
+            down.setEndValue(0.82)
+            down.setEasingCurve(QEasingCurve.InCubic)
+            up = QPropertyAnimation(eff, b"opacity", self)
+            up.setDuration(130)
+            up.setStartValue(0.82)
+            up.setEndValue(1.0)
+            up.setEasingCurve(QEasingCurve.OutCubic)
+            grp.addAnimation(down)
+            grp.addAnimation(up)
+
+            def _done() -> None:
+                try:
+                    if had_shadow and widget.underMouse():
+                        self._set_hover_shadow(widget, True)
+                    else:
+                        try:
+                            if widget.graphicsEffect() is eff:
+                                widget.setGraphicsEffect(None)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+            try:
+                grp.finished.connect(_done)
+            except Exception:
+                pass
+            try:
+                self._press_anims = (getattr(self, "_press_anims", []) or [])[-11:]
+                self._press_anims.append(grp)
+            except Exception:
+                pass
+            grp.start()
+        except Exception:
+            pass
+
+    def eventFilter(self, obj, event) -> bool:
+        # Тень-лифт только для кнопок: варианты ответов и точки живут в
+        # layout — их двигать/свечить нельзя, иначе налезают друг на друга.
+        _lift_btns = (getattr(self, "btn_prev", None), getattr(self, "btn_next", None),
+                      getattr(self, "btn_submit", None), getattr(self, "btn_snap", None),
+                      getattr(self, "btn_calib", None), getattr(self, "btn_pause", None),
+                      getattr(self, "btn_quit", None))
+        try:
+            from PySide6.QtCore import QEvent as _QE
+            et = event.type()
+            if obj is getattr(self, "exam_stack", None) and et == _QE.Resize:
+                try:
+                    self._fit_current_image()
+                except Exception:
+                    pass
+                try:
+                    return super().eventFilter(obj, event)
+                except Exception:
+                    return False
+            if et == _QE.MouseButtonPress:
+                try:
+                    is_btn = isinstance(obj, QPushButton)
+                except Exception:
+                    is_btn = False
+                try:
+                    is_opt = getattr(obj, "objectName", lambda: "")() == "ExamOpt"
+                except Exception:
+                    is_opt = False
+                if is_btn or is_opt:
+                    self._animate_press(obj)
+            elif et in (_QE.HoverEnter, _QE.Enter):
+                if obj in _lift_btns:
+                    self._set_hover_shadow(obj, True)
+            elif et in (_QE.HoverLeave, _QE.Leave):
+                if obj in _lift_btns:
+                    self._set_hover_shadow(obj, False)
+        except Exception:
+            pass
+        try:
+            return super().eventFilter(obj, event)
+        except Exception:
+            return False
+
+    def _exam_prev(self) -> None:
+        self._show_exam_index(self._exam_current - 1)
+
+    def _exam_next(self) -> None:
+        n = len(self._exam_pages)
+        if n <= 0:
+            return
+        if self._exam_current >= n - 1:
+            # на последнем вопросе — фокус на кнопке отправки
+            try:
+                self.btn_submit.setFocus()
+            except Exception:
+                pass
+            return
+        self._show_exam_index(self._exam_current + 1)
+
+    def _fit_current_image(self, _retry: int = 0) -> None:
+        """Масштабировать картинку текущего вопроса под размер окна.
+
+        Повтор через singleShot, пока layout не устаканится: fit по
+        промежуточному мелкому стеку давал навсегда мелкую картинку.
+        """
+        try:
+            from PySide6.QtCore import Qt as _Qt, QTimer as _QT
+            qi = self._exam_current
+            pm = self._exam_pixmaps.get(qi)
+            lbl = self._exam_img_labels.get(qi)
+            if pm is None or lbl is None:
+                return
+            sw, sh = self.exam_stack.width(), self.exam_stack.height()
+            if not self.exam_card.isVisible() or sw < 240 or sh < 260:
+                # layout ещё не устаканился (или окно скрыто): повторить позже.
+                # Пока pixmap не выставлен — ждать дольше (до ~5с).
+                limit = 40 if lbl.pixmap() is None else 8
+                if _retry < limit:
+                    _QT.singleShot(120, lambda: self._fit_current_image(_retry + 1))
+                return
+            # split-раскладка: картинке отдана вся правая половина стека
+            # (минус отступы страницы/бокса и строка бейджа)
+            avail_w = max(220, sw // 2 - 60)
+            avail_h = max(180, sh - 90)
+            cur = lbl.pixmap()
+            scaled = pm.scaled(avail_w, avail_h, _Qt.KeepAspectRatio, _Qt.SmoothTransformation)
+            if cur is None or cur.width() != scaled.width() or cur.height() != scaled.height():
+                lbl.setPixmap(scaled)
+        except Exception:
+            pass
+
+    def _fit_current_image_later(self) -> None:
+        try:
+            from PySide6.QtCore import QTimer as _QT
+            _QT.singleShot(60, lambda: self._fit_current_image(0))
+        except Exception:
+            pass
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt naming)
+        try:
+            super().resizeEvent(event)
+        except Exception:
+            pass
+        try:
+            self._fit_current_image()
+        except Exception:
+            pass
 
     @staticmethod
     def _paint_opts(grp) -> None:
@@ -729,6 +1519,25 @@ class BentoWindow(QMainWindow):
                 btn.setProperty("picked", btn is checked)
                 btn.style().unpolish(btn)
                 btn.style().polish(btn)
+        except Exception:
+            pass
+
+    def _refresh_q_badge(self, qi: int) -> None:
+        """Бейдж медиа-бокса: «Отвечен» (зелёный) или номер вопроса (серый)."""
+        try:
+            badge = self._exam_badges.get(qi)
+            if badge is None:
+                return
+            answered = False
+            try:
+                if 0 <= qi < len(self._exam_groups):
+                    answered = self._exam_groups[qi].checkedId() != -1
+            except Exception:
+                pass
+            badge.setText("Отвечен" if answered else f"Вопрос {qi + 1}")
+            badge.setProperty("done", bool(answered))
+            badge.style().unpolish(badge)
+            badge.style().polish(badge)
         except Exception:
             pass
 
@@ -772,7 +1581,7 @@ class BentoWindow(QMainWindow):
             logger.debug("heartbeat failed: %s", exc)
 
     def _maybe_evidence(self, rs) -> None:
-        """RISK 100 -> photo + short video clip to teacher/admin + local save."""
+        """Максимальный риск -> фото + короткий видеоклип учителю/админу + локально."""
         try:
             if self.standalone or self.client is None or not self._session_active:
                 return
@@ -801,7 +1610,10 @@ class BentoWindow(QMainWindow):
             import cv2
             import os
 
-            snapdir = getattr(self.alerts, "snapshot_dir", "data/logs/snapshots")
+            try:
+                snapdir = self.alerts.dated_snapshot_dir()
+            except Exception:
+                snapdir = getattr(self.alerts, "snapshot_dir", "data/logs/snapshots")
             os.makedirs(snapdir, exist_ok=True)
             tag = time.strftime("%Y%m%d_%H%M%S")
             jobs = []
@@ -933,8 +1745,76 @@ def run_bento(cfg, args, vision, eeg, risk, sync, alerts, student: str = "Дми
             win.setWindowIcon(_wi)
     except Exception:
         pass
-    win.show()
+    _run_bento_show(win, args)
+    # F11 — переключить fullscreen (удобно и на Windows, и на Linux).
+    try:
+        from PySide6.QtGui import QAction, QKeySequence
+
+        def _toggle_fs() -> None:
+            try:
+                if win.isFullScreen():
+                    win.showNormal()
+                else:
+                    win.showFullScreen()
+            except Exception:
+                pass
+
+        _act = QAction(win)
+        _act.setShortcut(QKeySequence("F11"))
+        _act.triggered.connect(_toggle_fs)
+        win.addAction(_act)
+    except Exception:
+        pass
     return app.exec()
+
+
+def apply_windows_kiosk(win) -> bool:
+    """Только Windows: убрать кнопку «свернуть» (экзамен без сворачивания).
+
+    Вызывать ДО первого show(). На Linux/macOS не применяется.
+    Возвращает True, если киоск-флаги выставлены.
+    """
+    try:
+        from PySide6.QtCore import Qt as _Q
+        flags = win.windowFlags()
+        flags &= ~_Q.WindowMinimizeButtonHint
+        win.setWindowFlags(flags)
+        return True
+    except Exception:
+        return False
+
+
+def _run_bento_show(win, args) -> None:
+    """Кроссплатформенный показ окна.
+
+    На Windows (и с --fullscreen): fullscreen + киоск без кнопки свернуть.
+    На Linux/macOS при тестах: обычное окно. Флаг --windowed отменяет всё.
+    """
+    try:
+        want_full = bool(getattr(args, "fullscreen", False))
+        want_windowed = bool(getattr(args, "windowed", False))
+        is_win = sys.platform.startswith("win") or os.name == "nt"
+        if want_windowed:
+            win.show()
+            return
+        if want_full or is_win:
+            if is_win:
+                apply_windows_kiosk(win)
+            try:
+                win.showFullScreen()
+            except Exception:
+                try:
+                    win.setWindowState(win.windowState() | Qt.WindowFullScreen)
+                    win.show()
+                except Exception:
+                    win.show()
+            return
+        win.show()
+    except Exception:
+        try:
+            win.show()
+        except Exception:
+            pass
 
 
 def _playable(path: str) -> bool:
