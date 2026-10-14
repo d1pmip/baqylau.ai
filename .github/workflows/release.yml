@@ -1,25 +1,72 @@
 name: Release builds
 
-# Отдельные поставки: сайт (панель) и приложение (ученик) + EXE в Releases.
-# Запуск: GitHub -> Actions -> Release builds -> Run workflow -> version vX.Y.Z,
-# либо запушить тег v* . Сборка идёт на windows-latest (EXE только там).
+# Раздельные релизы: сайт отдельно, приложение отдельно.
+#   сайт      -> тег server-vX.Y.Z  (BaqylauServer-win64.zip)
+#   приложение -> тег student-vX.Y.Z (BaqylauStudent-win64.zip)
+# Запуск: Actions -> Release builds -> Run workflow
+#   (version: 1.0.0, part: both/server/student),
+# либо запушить тег server-v* / student-v* / v* (= оба).
+# Сборка EXE идёт на windows-latest (на Linux EXE не собрать).
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release tag (e.g. v1.3.0)"
+        description: "Version without prefix (e.g. 1.0.0)"
         required: true
-        default: v1.3.0
+        default: 1.0.0
+      part:
+        description: "What to release"
+        required: true
+        default: both
+        type: choice
+        options:
+          - both
+          - server
+          - student
   push:
     tags:
       - "v*"
+      - "server-v*"
+      - "student-v*"
 
 permissions:
   contents: write
 
 jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.r.outputs.version }}
+      server: ${{ steps.r.outputs.server }}
+      student: ${{ steps.r.outputs.student }}
+    steps:
+      - id: r
+        shell: bash
+        run: |
+          VER=""; SRV=false; STU=false
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VER="${{ inputs.version }}"; VER="${VER#v}"
+            case "${{ inputs.part }}" in
+              server) SRV=true ;;
+              student) STU=true ;;
+              *) SRV=true; STU=true ;;
+            esac
+          else
+            REF="${{ github.ref_name }}"
+            case "$REF" in
+              server-v*) VER="${REF#server-v}"; SRV=true ;;
+              student-v*) VER="${REF#student-v}"; STU=true ;;
+              v*) VER="${REF#v}"; SRV=true; STU=true ;;
+            esac
+          fi
+          if [ -z "$VER" ]; then echo "no version resolved"; exit 1; fi
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "server=$SRV" >> "$GITHUB_OUTPUT"
+          echo "student=$STU" >> "$GITHUB_OUTPUT"
+
   build-windows:
+    needs: resolve
     runs-on: windows-latest
     defaults:
       run:
@@ -70,8 +117,9 @@ jobs:
             baqylau/BaqylauStudent-win64.zip
             baqylau/BaqylauServer-win64.zip
 
-  release:
-    needs: build-windows
+  release-server:
+    needs: [resolve, build-windows]
+    if: needs.resolve.outputs.server == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Download artifacts
@@ -80,29 +128,40 @@ jobs:
           name: bundles
           path: bundles
 
-      - name: Resolve tag
-        id: tag
-        shell: bash
-        run: |
-          if [ "${{ github.ref_type }}" = "tag" ]; then
-            echo "name=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "name=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Publish Release
+      - name: Publish server release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.tag.outputs.name }}
-          name: Baqylau ${{ steps.tag.outputs.name }}
+          tag_name: server-v${{ needs.resolve.outputs.version }}
+          name: Baqylau Server v${{ needs.resolve.outputs.version }}
           body: |
-            Отдельные поставки:
+            Панель преподавателя (Windows и Linux).
 
-            - **BaqylauStudent-win64.zip** — приложение ученика (только Windows):
-              распаковать, запустить `BaqylauStudent.exe` (или `BaqylauStudent.vbs`).
-              Окно открывается в полноэкранном режиме.
-            - **BaqylauServer-win64.zip** — панель преподавателя (Windows/Linux):
-              распаковать, поставить Flask (`pip install -r requirements-server.txt`),
-              запустить `start_server.bat` (Windows) или `./start_server.sh` (Linux).
-              Первый вход: `admin / admin123`.
-          files: bundles/*.zip
+            - Распаковать `BaqylauServer-win64.zip`.
+            - Поставить Flask: `pip install -r requirements-server.txt`.
+            - Запустить `start_server.bat` (Windows) или `./start_server.sh` (Linux).
+            - Первый вход: `admin / admin123`.
+          files: bundles/BaqylauServer-win64.zip
+
+  release-student:
+    needs: [resolve, build-windows]
+    if: needs.resolve.outputs.student == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: bundles
+          path: bundles
+
+      - name: Publish student release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: student-v${{ needs.resolve.outputs.version }}
+          name: Baqylau Student v${{ needs.resolve.outputs.version }}
+          body: |
+            Приложение ученика (только Windows).
+
+            - Распаковать `BaqylauStudent-win64.zip`.
+            - Запустить `BaqylauStudent.exe` (или `BaqylauStudent.vbs`).
+            - Окно открывается в полноэкранном режиме, Python не нужен.
+          files: bundles/BaqylauStudent-win64.zip

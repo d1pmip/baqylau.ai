@@ -11,16 +11,16 @@
 
 ## Скачать готовое
 
-В [Releases](https://github.com/dima-mip/baqylau.ai/releases) лежат две
-отдельные поставки:
+Релизы выходят отдельно — сайт и приложение не смешиваются:
 
-- **BaqylauStudent-win64.zip** — приложение ученика (только Windows):
-  распаковать и запустить `BaqylauStudent.exe` (окно сразу в полноэкранном
-  режиме).
-- **BaqylauServer-win64.zip** — панель преподавателя (Windows и Linux):
-  распаковать, поставить Flask (`pip install -r requirements-server.txt`),
-  запустить `start_server.bat` (Windows) или `./start_server.sh` (Linux).
-  Первый вход: `admin / admin123`.
+- **Приложение ученика (только Windows)** — релизы с тегом `student-vX`:
+  [Releases](https://github.com/dima-mip/baqylau.ai/releases) →
+  `BaqylauStudent-win64.zip`: распаковать и запустить `BaqylauStudent.exe`
+  (окно сразу в полноэкранном режиме).
+- **Сайт/панель (Windows и Linux)** — релизы с тегом `server-vX`:
+  `BaqylauServer-win64.zip`: распаковать, поставить Flask
+  (`pip install -r requirements-server.txt`), запустить `start_server.bat`
+  (Windows) или `./start_server.sh` (Linux). Первый вход: `admin / admin123`.
 
 ## Как это работает
 
