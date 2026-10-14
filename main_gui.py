@@ -41,6 +41,10 @@ def parse_args(argv=None):
     p.add_argument("--guided-calib", action="store_true",
                    help="гидовая калибровка по 5 точкам при старте (~8с)")
     p.add_argument("--no-security", action="store_true", help="disable workstation protection")
+    p.add_argument("--fullscreen", action="store_true",
+                   help="открыть окно в полноэкранном режиме (на Windows включается по умолчанию)")
+    p.add_argument("--windowed", action="store_true",
+                   help="принудительно оконный режим (отменяет авто-fullscreen на Windows)")
     p.add_argument("--server", default="", help="Baqylau Web URL (student mode), e.g. http://192.168.1.10:5050")
     p.add_argument("--login", default="", help="student login (server mode)")
     p.add_argument("--password", default="", help="student password (server mode)")
