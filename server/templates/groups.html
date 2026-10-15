@@ -1,5 +1,6 @@
 {% extends "base.html" %}{% block t %}Группы{% endblock %}{% block b %}
 <div class="pagehead"><div><small>СТРУКТУРА</small><h2>Группы и ученики</h2></div></div>
+{% if error %}<div class="alert err" role="alert"><span class="msr">error</span><span>{{ error }}</span></div>{% endif %}
 {% if imported is not none or import_error %}
 <div class="card block"><span class="{% if import_error %}err{% else %}muted{% endif %}">{% if import_error %}{{ import_error }}{% else %}Импортировано: {{ imported }}; пропущено: {{ skipped }}{% endif %}</span></div>
 {% endif %}
@@ -22,17 +23,17 @@
 <div class="importbar">
 <div class="formrow"><label class="muted" for="sharedGroup">Группа</label>
 <select id="sharedGroup"><option value="all" selected>Все группы</option>{% for g in groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}</select></div>
-<form method="post" class="formrow"><input type="hidden" name="action" value="student">
+<form method="post" class="formrow" id="addStudentForm"><input type="hidden" name="action" value="student">
 <input type="hidden" name="group_id" class="sharedGroupVal" value="">
 <input name="full_name" placeholder="ФИО" required>
 <input name="username" placeholder="Логин" required>
 <input name="password" placeholder="Пароль" value="1234">
 <button class="btn y" type="submit">+ Ученик</button></form>
-<form method="post" action="/groups/import" enctype="multipart/form-data" class="formrow">
+<form method="post" action="/groups/import" enctype="multipart/form-data" class="formrow" id="importForm">
 <input type="hidden" name="group_id" class="sharedGroupVal" value="">
-<label class="btn g filebtn"><span class="msr">upload</span> Из Excel<input type="file" name="file" accept=".xlsx,.xlsm,.csv,.xls" required onchange="this.form.submit()"></label>
+<label class="btn g filebtn"><span class="msr">upload</span> Из Excel<input type="file" id="importFile" name="file" accept=".xlsx,.xlsm,.csv,.xls" required></label>
 </form>
-<div class="hint importnote">Excel/CSV: одна колонка «ФИО» (шапка необязательна). Логин вида Фамилия_И_О латиницей, пароль — случайно. Ученики попадут в выбранную группу.</div>
+<div class="hint importnote" id="groupHint">Excel/CSV: одна колонка «ФИО» (шапка необязательна). Логин вида Фамилия_И_О латиницей, пароль — случайно. Ученики попадут в выбранную группу.</div>
 </div>
 <div class="tblwrap"><table id="studTable"><tr><th>ФИО</th><th>Логин</th><th>Пароль</th><th>Группа</th><th></th></tr>
 {% for s in students %}<tr data-s="1" data-g="{{ s.group_id or '' }}"><td><b>{{ s.full_name }}</b></td><td>{{ s.username }}</td>
@@ -55,9 +56,16 @@ document.querySelectorAll('#studTable tr[data-s]').forEach(function(tr){total++;
 var vis=(v==='all'||tr.getAttribute('data-g')===v);
 tr.style.display=vis?'':'none';if(vis)shown++;});
 var c=document.getElementById('studCount');
-if(c)c.textContent=(v==='all')?('Всего учеников: '+total):('Показано '+shown+' из '+total);}
+if(c)c.textContent=(v==='all')?('Всего учеников: '+total):('Показано '+shown+' из '+total);
+var h=document.getElementById('groupHint');
+if(h)h.innerHTML=(v==='all')
+?'⚠️ Выбрано «Все группы»: для добавления/импорта выберите конкретную группу выше.'
+:'Excel/CSV: одна колонка «ФИО» (шапка необязательна). Ученики попадут в выбранную группу.';}
 var sync=function(){document.querySelectorAll('.sharedGroupVal').forEach(function(i){i.value=sg.value;});filterStudents();};
-sg.onchange=sync;sync();})();
+sg.onchange=sync;sync();
+function needGroup(){if(sg.value==='all'){alert('Выберите конкретную группу выше (а не «Все группы»)');sg.focus();return false;}return true;}
+var af=document.getElementById('addStudentForm');if(af)af.onsubmit=needGroup;
+var im=document.getElementById('importFile');if(im)im.onchange=function(){if(!needGroup()){im.value='';return;}im.form.submit();};})();
 (function(){var pb=document.getElementById('printBtn');if(!pb)return;
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 pb.onclick=function(){

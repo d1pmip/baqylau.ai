@@ -230,6 +230,24 @@ def create_app(db_path: str = DB) -> Flask:
     def con():
         return d.connect(app.config["DB"])
 
+    def _safe_int(v, default: int = 0) -> int:
+        """Строгий парс id из формы: 'all'/''/None -> default, без ValueError."""
+        try:
+            if v is None or (isinstance(v, str) and v.strip().lower() in ("", "all", "none", "null")):
+                return default
+            return int(str(v).strip() or default)
+        except (TypeError, ValueError):
+            return default
+
+    @app.route("/favicon.ico")
+    def favicon():
+        # глушим 404 из логов: отдаём brand.svg если есть, иначе 204
+        static_dir = os.path.join(os.path.dirname(__file__), "static")
+        icon = os.path.join(static_dir, "brand.svg")
+        if os.path.exists(icon):
+            return send_from_directory(static_dir, "brand.svg")
+        return "", 204
+
     def me():
         u = session.get("user")
         return u
@@ -299,7 +317,8 @@ def create_app(db_path: str = DB) -> Flask:
         finally:
             c.close()
         return render_template("dashboard.html", user=me(), exams=exams, groups=groups,
-                               sessions=sess, unseen=unseen)
+                               sessions=sess, unseen=unseen,
+                               error=request.args.get("error", ""), ok=request.args.get("ok", ""))
 
     @app.route("/api/teacher/state")
     def teacher_state():
@@ -373,7 +392,7 @@ def create_app(db_path: str = DB) -> Flask:
                 "SELECT u.*,g.name AS grp FROM users u LEFT JOIN groups g ON g.id=u.group_id "
                 "WHERE u.role='student' ORDER BY g.name,u.full_name").fetchall()
             ctx = dict(user=me(), groups=groups, students=students, gcounts=gcounts,
-                       imported=None, skipped=0, import_error="", new_pw=None)
+                       imported=None, skipped=0, import_error="", new_pw=None, error="")
             ctx.update(extra)
             return render_template("groups.html", **ctx)
         finally:
@@ -387,23 +406,46 @@ def create_app(db_path: str = DB) -> Flask:
             new_pw = None
             try:
                 if request.form.get("action") == "group":
+                    name = (request.form.get("name", "") or "").strip()
+                    if not name:
+                        return redirect(url_for("groups", error="Название группы пустое"))
                     c.execute("INSERT OR IGNORE INTO groups(name,description) VALUES(?,?)",
-                              (request.form.get("name", "").strip(),
-                               request.form.get("description", "")))
+                              (name, request.form.get("description", "") or ""))
                     c.commit()
                 elif request.form.get("action") == "student":
                     import secrets as _s
+                    import sqlite3 as _sq
 
+                    raw_gid = request.form.get("group_id", "")
+                    gid = _safe_int(raw_gid)
+                    if not gid:
+                        return redirect(url_for(
+                            "groups",
+                            error="Выберите группу для ученика (а не «Все группы»)"))
+                    grow = c.execute("SELECT id FROM groups WHERE id=?", (gid,)).fetchone()
+                    if grow is None:
+                        return redirect(url_for("groups", error="Группа не найдена"))
+                    username = (request.form.get("username", "") or "").strip()
+                    if not username:
+                        return redirect(url_for("groups", error="Логин ученика пустой"))
+                    exists = c.execute("SELECT id FROM users WHERE username=?",
+                                       (username,)).fetchone()
+                    if exists:
+                        return redirect(url_for(
+                            "groups", error=f"Логин «{username}» уже занят"))
                     salt = _s.token_hex(8)
                     pw = request.form.get("password", "1234") or "1234"
-                    c.execute(
-                        "INSERT INTO users(username,pass_hash,salt,role,full_name,group_id,pass_plain)"
-                        " VALUES(?,?,?,?,?,?,?)",
-                        (request.form.get("username", "").strip(),
-                         d.hash_password(pw, salt),
-                         salt, "student", request.form.get("full_name", ""),
-                         int(request.form.get("group_id") or 0) or None, pw))
-                    c.commit()
+                    try:
+                        c.execute(
+                            "INSERT INTO users(username,pass_hash,salt,role,full_name,group_id,pass_plain)"
+                            " VALUES(?,?,?,?,?,?,?)",
+                            (username, d.hash_password(pw, salt),
+                             salt, "student", request.form.get("full_name", "") or "",
+                             gid, pw))
+                        c.commit()
+                    except _sq.IntegrityError:
+                        return redirect(url_for(
+                            "groups", error=f"Логин «{username}» уже занят"))
                 elif request.form.get("action") == "reset_pw":
                     import secrets as _s
 
@@ -425,14 +467,13 @@ def create_app(db_path: str = DB) -> Flask:
                     new_pw = {"full_name": row["full_name"], "username": row["username"],
                               "password": pw}
                 elif request.form.get("action") == "del_student":
-                    c.execute("DELETE FROM users WHERE id=? AND role='student'",
-                              (int(request.form.get("id", 0)),))
-                    c.commit()
+                    sid = _safe_int(request.form.get("id", 0))
+                    if sid:
+                        c.execute("DELETE FROM users WHERE id=? AND role='student'",
+                                  (sid,))
+                        c.commit()
                 elif request.form.get("action") == "del_group":
-                    try:
-                        gid = int(request.form.get("id", 0))
-                    except Exception:
-                        gid = 0
+                    gid = _safe_int(request.form.get("id", 0))
                     if gid:
                         busy = c.execute(
                             "SELECT COUNT(*) n FROM sessions WHERE group_id=? AND status='active'",
@@ -460,7 +501,8 @@ def create_app(db_path: str = DB) -> Flask:
         except Exception:
             skipped = 0
         return _groups_page(imported=imported, skipped=skipped,
-                            import_error=request.args.get("error", ""))
+                            import_error=request.args.get("error", ""),
+                            error=request.args.get("error", ""))
 
     @app.route("/groups/import", methods=["POST"])
     @login_required("teacher", "admin")
@@ -468,10 +510,7 @@ def create_app(db_path: str = DB) -> Flask:
         f = request.files.get("file")
         if not f or not f.filename:
             return redirect(url_for("groups", error="Выберите файл .xlsx или .csv"))
-        try:
-            gid = int(request.form.get("group_id", 0) or 0)
-        except Exception:
-            gid = 0
+        gid = _safe_int(request.form.get("group_id", 0))
         c = con()
         try:
             grow = c.execute("SELECT id, name FROM groups WHERE id=?", (gid,)).fetchone()
@@ -576,7 +615,6 @@ def create_app(db_path: str = DB) -> Flask:
                                 fh.write(data)
                             q["image"] = name
             c = con()
-            c = con()
             try:
                 c.execute(
                     "INSERT INTO exams(title,subject,duration_min,questions_json,created_by,created_at)"
@@ -606,21 +644,30 @@ def create_app(db_path: str = DB) -> Flask:
     @app.route("/session/start", methods=["POST"])
     @login_required("teacher", "admin")
     def session_start():
+        exam_id = _safe_int(request.form.get("exam_id"))
+        group_id = _safe_int(request.form.get("group_id"))
+        if not exam_id or not group_id:
+            return redirect(url_for(
+                "dashboard",
+                error="Выберите экзамен и группу: список пуст или не выбран. "
+                      "Создайте экзамен и группу перед запуском."))
         c = con()
         try:
+            ex = c.execute("SELECT id FROM exams WHERE id=?", (exam_id,)).fetchone()
+            gr = c.execute("SELECT id FROM groups WHERE id=?", (group_id,)).fetchone()
+            if ex is None or gr is None:
+                return redirect(url_for("dashboard", error="Экзамен или группа не найдены"))
             c.execute("UPDATE sessions SET status='finished',finished_at=? WHERE status='active'",
                       (time.time(),))
             c.execute(
                 "INSERT INTO sessions(exam_id,group_id,status,started_at,started_by)"
                 " VALUES(?,?,'active',?,?)",
-                (int(request.form.get("exam_id")), int(request.form.get("group_id")),
-                 time.time(), me()["id"]))
+                (exam_id, group_id, time.time(), me()["id"]))
             c.commit()
-            d.audit(c, me()["username"], "session_start",
-                    f"exam={request.form.get('exam_id')} group={request.form.get('group_id')}")
+            d.audit(c, me()["username"], "session_start", f"exam={exam_id} group={group_id}")
         finally:
             c.close()
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("dashboard", ok="Экзамен запущен"))
 
     @app.route("/session/stop", methods=["POST"])
     @login_required("teacher", "admin")
@@ -666,19 +713,43 @@ def create_app(db_path: str = DB) -> Flask:
         try:
             if request.method == "POST":
                 import secrets as _s
+                import sqlite3 as _sq
 
+                username = (request.form.get("username", "") or "").strip()
+                password = request.form.get("password", "1234") or "1234"
+                role = request.form.get("role", "teacher") or "teacher"
+                if role not in ("teacher", "admin"):
+                    role = "teacher"
+                if not username:
+                    users = c.execute(
+                        "SELECT id,username,role,full_name FROM users ORDER BY role,username").fetchall()
+                    return render_template("users.html", user=me(), users=users,
+                                           error="Логин пустой")
+                if c.execute("SELECT id FROM users WHERE username=?",
+                             (username,)).fetchone():
+                    users = c.execute(
+                        "SELECT id,username,role,full_name FROM users ORDER BY role,username").fetchall()
+                    return render_template(
+                        "users.html", user=me(), users=users,
+                        error=f"Логин «{username}» уже занят")
                 salt = _s.token_hex(8)
-                c.execute(
-                    "INSERT INTO users(username,pass_hash,salt,role,full_name) VALUES(?,?,?,?,?)",
-                    (request.form.get("username", "").strip(),
-                     d.hash_password(request.form.get("password", "1234"), salt),
-                     salt, request.form.get("role", "teacher"),
-                     request.form.get("full_name", "")))
-                c.commit()
+                try:
+                    c.execute(
+                        "INSERT INTO users(username,pass_hash,salt,role,full_name) VALUES(?,?,?,?,?)",
+                        (username, d.hash_password(password, salt),
+                         salt, role, request.form.get("full_name", "") or ""))
+                    c.commit()
+                except _sq.IntegrityError:
+                    users = c.execute(
+                        "SELECT id,username,role,full_name FROM users ORDER BY role,username").fetchall()
+                    return render_template(
+                        "users.html", user=me(), users=users,
+                        error=f"Логин «{username}» уже занят")
                 return redirect(url_for("users"))
             users = c.execute(
                 "SELECT id,username,role,full_name FROM users ORDER BY role,username").fetchall()
-            return render_template("users.html", user=me(), users=users)
+            return render_template("users.html", user=me(), users=users,
+                                   error=request.args.get("error", ""))
         finally:
             c.close()
 

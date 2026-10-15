@@ -1,0 +1,110 @@
+name: Release Student App
+
+# Отдельный релиз ТОЛЬКО ученика (BaqylauStudent EXE, только Windows).
+# Сборка через PyInstaller на windows-latest (10-20 мин).
+#
+# Запуск:
+#   Actions -> Release Student App -> Run workflow -> version: 1.0.0
+#   либо запушить тег:  git tag student-v1.0.0 && git push origin student-v1.0.0
+#
+# Аутентификация: встроенный secrets.GITHUB_TOKEN (permissions: contents: write).
+# PAT (ghp_...) в yaml НЕ вписывать. Свой токен — только в
+# Repo Settings -> Secrets and variables -> Actions -> RELEASE_PAT.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version without prefix (e.g. 1.0.0)"
+        required: true
+        default: 1.0.0
+  push:
+    tags:
+      - "student-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.r.outputs.version }}
+    steps:
+      - id: r
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VER="${{ inputs.version }}"; VER="${VER#v}"
+          else
+            VER="${{ github.ref_name }}"; VER="${VER#student-v}"
+          fi
+          if [ -z "$VER" ]; then echo "no version resolved"; exit 1; fi
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+  build-student:
+    needs: resolve
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install deps (CPU torch to keep it slim)
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build BaqylauStudent.exe
+        run: pyinstaller --noconfirm --clean BaqylauStudent.spec
+
+      - name: Pack student bundle
+        run: |
+          New-Item -ItemType Directory -Force pkg | Out-Null
+          Copy-Item dist/BaqylauStudent.exe pkg/
+          Copy-Item BaqylauStudent.vbs, start_student.bat pkg/
+          Compress-Archive -Path pkg/* -DestinationPath BaqylauStudent-win64.zip -Force
+          Get-Item BaqylauStudent-win64.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaqylauStudent-win64
+          path: BaqylauStudent-win64.zip
+
+  release-student:
+    needs: [resolve, build-student]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: BaqylauStudent-win64
+          path: bundles
+
+      - name: Publish student release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: student-v${{ needs.resolve.outputs.version }}
+          name: Baqylau Student v${{ needs.resolve.outputs.version }}
+          body: |
+            Приложение ученика (только Windows).
+
+            Установка:
+            1. Распаковать `BaqylauStudent-win64.zip`.
+            2. Запустить `BaqylauStudent.exe` (или `BaqylauStudent.vbs`).
+            3. Окно открывается в полноэкранном режиме, Python не нужен.
+            4. Подключиться к панели: `--server http://<ip-учителя>:5050`.
+          files: bundles/BaqylauStudent-win64.zip
+          # Свой PAT из Secrets (если нужен): token: ${{ secrets.RELEASE_PAT }}

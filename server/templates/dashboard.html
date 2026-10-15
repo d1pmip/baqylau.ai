@@ -1,13 +1,18 @@
 {% extends "base.html" %}{% block t %}Панель{% endblock %}{% block b %}
+{% if error %}<div class="alert err" role="alert"><span class="msr">error</span><span>{{ error }}</span></div>{% endif %}
+{% if ok %}<div class="alert ok" role="status"><span class="msr">check_circle</span><span>{{ ok }}</span></div>{% endif %}
 <section class="row1">
   <div class="card exam">
     <span class="live off" id="live"><i class="dot"></i><span id="liveTxt">Ожидание</span><span class="time" id="timer">00:00</span></span>
     <h1 id="title">Экзамен не запущен</h1>
+    {% if not exams or not groups %}
+    <div class="hint">Сначала создайте {% if not exams %}<a href="/exams/new">экзамен</a>{% endif %}{% if not exams and not groups %} и {% endif %}{% if not groups %}<a href="/groups">группу с учениками</a>{% endif %} — иначе запуск невозможен.</div>
+    {% endif %}
     <div class="ctrl">
       <form method="post" action="/session/start" style="display:contents" id="startForm">
-      <select class="sel-exam" name="exam_id" aria-label="Экзамен">{% for e in exams %}<option value="{{ e.id }}">{{ e.title }} ({{ e.subject }})</option>{% endfor %}</select>
-      <select name="group_id" aria-label="Группа">{% if groups %}{% for g in groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}{% else %}<option value="" disabled selected>Группы нет</option>{% endif %}</select>
-      <button class="btn go" type="submit" id="go"><span class="msr">play_arrow</span> Запустить</button>
+      <select class="sel-exam" name="exam_id" aria-label="Экзамен" {% if not exams %}disabled{% endif %}>{% for e in exams %}<option value="{{ e.id }}">{{ e.title }} ({{ e.subject }})</option>{% else %}<option value="" disabled selected>Нет экзаменов</option>{% endfor %}</select>
+      <select name="group_id" aria-label="Группа" {% if not groups %}disabled{% endif %}>{% if groups %}{% for g in groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}{% else %}<option value="" disabled selected>Нет групп</option>{% endif %}</select>
+      <button class="btn go" type="submit" id="go" {% if not exams or not groups %}disabled title="Создайте экзамен и группу"{% endif %}><span class="msr">play_arrow</span> Запустить</button>
       </form>
       <form method="post" action="/session/stop" style="display:contents" id="stopForm">
       <button class="btn stop" type="submit" id="stop" disabled><span>Завершить</span></button>

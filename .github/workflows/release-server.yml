@@ -1,0 +1,128 @@
+name: Release Server Panel
+
+# Отдельный лёгкий релиз ТОЛЬКО панели (Baqylau Server).
+# Без сборки Student EXE, без torch — 1 минута на ubuntu.
+#
+# Запуск:
+#   Actions -> Release Server Panel -> Run workflow -> version: 1.0.0
+#   либо запушить тег:  git tag server-v1.0.0 && git push origin server-v1.0.0
+#
+# Аутентификация:
+#   Используется встроенный secrets.GITHUB_TOKEN (permissions: contents: write).
+#   НИКОГДА не вписывай PAT (ghp_...) прямо в yaml — его украдут из git-истории.
+#   Если нужен отдельный токен (например для приватного репо):
+#     1. Repo Settings -> Secrets and variables -> Actions -> New secret
+#        Name: RELEASE_PAT, Value: <твой ghp_...>
+#     2. Ниже замени `github.token` на `secrets.RELEASE_PAT` (строка помечена).
+#   После того как токен засветился в чате/логе — отзови его:
+#     GitHub -> Settings -> Developer settings -> Personal access tokens -> Revoke.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version without prefix (e.g. 1.0.0)"
+        required: true
+        default: 1.0.0
+  push:
+    tags:
+      - "server-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.r.outputs.version }}
+    steps:
+      - id: r
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VER="${{ inputs.version }}"; VER="${VER#v}"
+          else
+            VER="${{ github.ref_name }}"; VER="${VER#server-v}"
+          fi
+          if [ -z "$VER" ]; then echo "no version resolved"; exit 1; fi
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+  pack-server:
+    needs: resolve
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate panel files
+        shell: bash
+        run: |
+          test -f server/app.py || (echo "server/app.py missing" && exit 1)
+          test -f requirements-server.txt || (echo "requirements-server.txt missing" && exit 1)
+          python3 -c "import ast; ast.parse(open('server/app.py', encoding='utf-8').read()); print('app.py syntax OK')"
+
+      - name: Pack server bundle
+        shell: bash
+        run: |
+          rm -rf dist-srv BaqylauServer-win64.zip
+          mkdir -p dist-srv/BaqylauServer
+          cp -r server dist-srv/BaqylauServer/
+          for f in requirements-server.txt start_server.bat start_server.sh BaqylauServer.vbs README.md README_KK.md config.py; do
+            [ -f "$f" ] && cp "$f" dist-srv/BaqylauServer/
+          done
+          # мусор и кэш не pack-аем
+          find dist-srv -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
+          find dist-srv -name "*.pyc" -delete 2>/dev/null || true
+          (cd dist-srv && zip -r ../BaqylauServer-win64.zip BaqylauServer)
+          ls -lh BaqylauServer-win64.zip
+          unzip -l BaqylauServer-win64.zip | head -30
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaqylauServer-win64
+          path: BaqylauServer-win64.zip
+
+  release-server:
+    needs: [resolve, pack-server]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: BaqylauServer-win64
+          path: bundles
+
+      - name: Publish server release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: server-v${{ needs.resolve.outputs.version }}
+          name: Baqylau Server v${{ needs.resolve.outputs.version }}
+          body: |
+            Веб-панель: редизайн и новые функции
+            - Мягкие hover-эффекты карточек и кнопок (длинные плавные переходы)
+            - Material Symbols Rounded (Fill, 700/200, opsz 20) вместо самописных SVG
+            - Импорт учеников из Excel/CSV по колонке ФИО: логин Фамилия_И_О
+              латиницей, случайный пароль, загрузка в выбранную группу
+            - Пароли в таблице учеников (точки + глазик), сброс пароля, печать
+              списка через диалог печати
+            - Удаление групп с отвязкой учеников и защитой активной сессии
+            - Фильтр учеников по группе на дашборде и на странице групп
+            - Оффлайн-режим дашборда: серые блоки и «Оффлайн» при потере связи
+            - Ровные внутренние отступы на всех страницах, редизайн конструктора
+              экзамена, убран ID из списка экзаменов
+
+            Установка:
+            1. Распаковать `BaqylauServer-win64.zip`.
+            2. `pip install -r requirements-server.txt`
+            3. Запустить `start_server.bat` (Windows) или `./start_server.sh` (Linux).
+            4. Открыть http://127.0.0.1:5050 — первый вход `admin / admin123` (сменить!).
+
+            Фиксы стабильности (500 -> понятные ошибки):
+            - Запуск сессии без экзамена/группы больше не роняет сервер
+            - Добавление ученика при «Все группы» показывает подсказку, а не 500
+            - Дубли логинов (ученики/пользователи) показывают «уже занят»
+          files: bundles/BaqylauServer-win64.zip
+          # Токен по умолчанию — встроенный. Если завёл свой PAT в Secrets:
+          # token: ${{ secrets.RELEASE_PAT }}
