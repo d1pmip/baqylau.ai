@@ -242,6 +242,12 @@ def create_app(db_path: str = DB) -> Flask:
 
     from . import i18n as _i18n
 
+    try:
+        from . import update as _upd_startup
+        _upd_startup.check_at_startup()
+    except Exception:
+        pass
+
     @app.context_processor
     def _inject_lang():
         lang = _i18n.get_lang()
@@ -361,6 +367,24 @@ def create_app(db_path: str = DB) -> Flask:
         except Exception as exc:
             logger.warning("update check failed: %s", exc)
             return jsonify({"update": False, "latest": None})
+
+    @app.route("/update/download")
+    @login_required("teacher", "admin")
+    def update_download():
+        try:
+            from . import update as _upd
+            info = _upd.check()
+            if info.get("latest"):
+                p = _upd.local_zip(str(info["latest"]))
+                if p:
+                    return send_from_directory(
+                        os.path.abspath(os.path.dirname(p)),
+                        os.path.basename(p), as_attachment=True)
+            if info.get("url"):
+                return redirect(info["url"])
+        except Exception as exc:
+            logger.warning("update download failed: %s", exc)
+        return redirect("https://github.com/d1pmip/baqylau.ai/releases")
 
     @app.route("/api/translate_kk", methods=["POST"])
     @login_required("teacher", "admin")
@@ -739,27 +763,32 @@ def create_app(db_path: str = DB) -> Flask:
                 pct = round(100 * r["score"] / total) if total else 0
                 out.append({"r": r, "pct": pct,
                             "cls": "OK" if pct >= 80 else ("MEDIUM" if pct >= 50 else "HIGH")})
+            by_exam: dict = {}
+            for it in out:
+                g = by_exam.setdefault(it["r"]["exam_id"],
+                                       {"title": it["r"]["exam"], "items": []})
+                g["items"].append(it)
             return render_template("results.html", user=me(), exams=exams, groups=groups,
-                                   rows=out, f_exam=f_exam, f_group=f_group)
+                                   groups2=by_exam, total_n=len(out),
+                                   rows=out, f_exam=f_exam, f_group=f_group,
+                                   error=request.args.get("error", ""),
+                                   ok=request.args.get("ok", ""))
         finally:
             c.close()
 
     @app.route("/results/export")
     @login_required("teacher", "admin")
     def results_export():
-        import csv as _csv
         import io as _io
         f_exam = _safe_int(request.args.get("exam_id"))
         f_group = _safe_int(request.args.get("group_id"))
         c = con()
         try:
             rows = _results_rows(c, f_exam, f_group)
-            buf = _io.StringIO()
-            buf.write("\ufeff")
-            w = _csv.writer(buf, delimiter=";")
             T = _i18n.t(_i18n.get_lang())
-            w.writerow([T["th_student"], T["th_login"], T["th_group"], T["th_exam"],
-                        T["th_score"], T["r_percent"], T["r_time"]])
+            head = [T["th_student"], T["th_login"], T["th_group"], T["th_exam"],
+                    T["th_score"], T["r_percent"], T["r_time"]]
+            body = []
             for r in rows:
                 total = r["total"] or 0
                 pct = round(100 * r["score"] / total) if total else 0
@@ -768,13 +797,68 @@ def create_app(db_path: str = DB) -> Flask:
                                        time.localtime(float(r["submitted_at"])))
                 except Exception:
                     ts = ""
-                w.writerow([r["student"], r["login"], r["grp"], r["exam"],
-                            r["score"], f"{pct}%", ts])
-            data = buf.getvalue().encode("utf-8")
+                body.append([r["student"], r["login"], r["grp"], r["exam"],
+                             r["score"], f"{pct}%", ts])
+            try:
+                import openpyxl as _xl
+                wb = _xl.Workbook()
+                ws = wb.active
+                ws.title = "Results"
+                ws.append(head)
+                for row in body:
+                    ws.append(row)
+                widths = [28, 18, 14, 28, 10, 8, 18]
+                for i, wdt in enumerate(widths, 1):
+                    ws.column_dimensions[_xl.utils.get_column_letter(i)].width = wdt
+                buf = _io.BytesIO()
+                wb.save(buf)
+                return Response(
+                    buf.getvalue(),
+                    mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition":
+                             "attachment; filename=baqylau-results.xlsx"})
+            except ImportError:
+                import csv as _csv
+                buf = _io.StringIO()
+                buf.write("\ufeff")
+                w = _csv.writer(buf, delimiter=";")
+                w.writerow(head)
+                w.writerows(body)
+                return Response(buf.getvalue().encode("utf-8"), mimetype="text/csv",
+                                headers={"Content-Disposition":
+                                         "attachment; filename=baqylau-results.csv"})
         finally:
             c.close()
-        return Response(data, mimetype="text/csv", headers={
-            "Content-Disposition": "attachment; filename=baqylau-results.csv"})
+
+    @app.route("/results/clear", methods=["POST"])
+    @login_required("teacher", "admin")
+    def results_clear():
+        T = _i18n.t(_i18n.get_lang())
+        f_exam = _safe_int(request.form.get("exam_id"))
+        f_group = _safe_int(request.form.get("group_id"))
+        if not f_exam and not f_group:
+            return redirect(url_for("results", error=T["r_pick"]))
+        c = con()
+        try:
+            q = ("DELETE FROM submissions WHERE session_id IN "
+                 "(SELECT id FROM sessions WHERE 1=1")
+            args: list = []
+            if f_exam:
+                q += " AND exam_id=?"
+                args.append(f_exam)
+            if f_group:
+                q += " AND group_id=?"
+                args.append(f_group)
+            q += ")"
+            cur = c.execute(q, args)
+            n = cur.rowcount or 0
+            c.commit()
+            d.audit(c, me()["username"], "results_clear",
+                    f"exam={f_exam} group={f_group} n={n}")
+        finally:
+            c.close()
+        return redirect(url_for("results", ok=f"{T['r_cleared']}: {n}",
+                                exam_id=f_exam, group_id=f_group))
 
     # ---------- web: sessions ----------
     @app.route("/session/start", methods=["POST"])

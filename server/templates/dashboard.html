@@ -1,7 +1,7 @@
 {% extends "base.html" %}{% block t %}{{ T.dash }}{% endblock %}{% block b %}
 {% if error %}<div class="alert err" role="alert"><span class="msr">error</span><span>{{ error }}</span></div>{% endif %}
 {% if ok %}<div class="alert ok" role="status"><span class="msr">check_circle</span><span>{{ ok }}</span></div>{% endif %}
-{% if upd.update %}<div class="alert ok" role="status"><span class="msr">update</span><span>{{ T.upd_new }}: server-v{{ upd.latest }} ({{ T.upd_you }} {{ upd.local }}) — <a href="{{ upd.url }}" target="_blank" rel="noopener">{{ T.upd_dl }}</a></span></div>{% endif %}
+{% if upd['update'] %}<div class="alert ok" role="status"><span class="msr">update</span><span>{{ T.upd_new }}: server-v{{ upd.latest }} ({{ T.upd_you }} {{ upd.local }}) — <a href="/update/download">{{ T.upd_dl }}</a></span></div>{% endif %}
 <section class="row1">
   <div class="card exam">
     <span class="live off" id="live"><i class="dot"></i><span id="liveTxt">{{ T.dash_wait }}</span><span class="time" id="timer">00:00</span></span>
@@ -33,7 +33,7 @@
       <button class="chip" data-f="all" aria-pressed="true">{{ T.dash_all }}</button>
       <button class="chip" data-f="on" aria-pressed="false">{{ T.dash_on }}</button>
       <button class="chip" data-f="risk" aria-pressed="false">{{ T.dash_risky }}</button>
-      <button class="chip" id="sndBtn" title="{{ T.snd }}" aria-pressed="false">🔊</button>
+      <button class="chip" id="sndBtn" title="{{ T.snd }}" aria-pressed="false"><span class="msr">volume_up</span></button>
     </div>
     <div class="grid" id="grid"></div>
   </section>
@@ -55,7 +55,7 @@ shortcut:'Ыстық пернелер',focus_lost:'Терезеден шығу',
 const LBL=BQ_LANG==='kk'?LBL_KK:LBL_RU;
 const notifAudio=new Audio('/notif.wav');notifAudio.preload='auto';
 function soundOn(){try{return localStorage.getItem('bq-sound')!=='off';}catch(e){return true;}}
-function paintSnd(){const b=document.getElementById('sndBtn');if(!b)return;b.textContent=soundOn()?'🔊':'🔇';b.setAttribute('aria-pressed',soundOn()?'true':'false');}
+function paintSnd(){const b=document.getElementById('sndBtn');if(!b)return;const on=soundOn();b.innerHTML=`<span class="msr">${on?'volume_up':'no_sound'}</span>`;b.setAttribute('aria-pressed',on?'true':'false');}
 document.addEventListener('pointerdown',()=>{try{notifAudio.load();}catch(e){}},{once:true});
 const S={notes:'{{ T.dash_notes }}',run:'{{ T.dash_run }}',running:'{{ T.dash_running }}',
 wait:'{{ T.dash_wait }}',idle:'{{ T.dash_idle }}',off:'{{ T.dash_off }}',offline:'{{ T.dash_offline }}',
