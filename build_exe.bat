@@ -10,6 +10,7 @@ python -m PyInstaller --noconfirm --clean --onefile --windowed --strip --upx ^
   --add-data "ui\brand.svg;ui" ^
   --add-data "ui\bento_style.qss;ui" ^
   --add-data "yolov8n.pt;." ^
+  --add-data "fuckensound.wav;." ^
   --add-data "data\models\face_landmarker.task;data\models" ^
   --collect-data mediapipe ^
   --collect-data ultralytics ^

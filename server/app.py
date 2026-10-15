@@ -944,6 +944,12 @@ def create_app(db_path: str = DB) -> Flask:
     def evidence_file(name):
         return send_from_directory(os.path.abspath(EVIDENCE_DIR), name)
 
+    @app.route("/notif.wav")
+    @login_required("teacher", "admin")
+    def notif_wav():
+        base = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        return send_from_directory(base, "fuckensound.wav")
+
     @app.route("/uploads/<path:name>")
     def upload_file(name):
         """Question images: web session or student token required."""

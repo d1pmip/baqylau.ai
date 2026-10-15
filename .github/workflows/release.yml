@@ -107,6 +107,7 @@ jobs:
           New-Item -ItemType Directory -Force srv/BaqylauServer | Out-Null
           Copy-Item -Recurse server srv/BaqylauServer/
           Copy-Item start_server.bat, start_server.sh, BaqylauServer.vbs, requirements-server.txt srv/BaqylauServer/
+          if (Test-Path fuckensound.wav) { Copy-Item fuckensound.wav srv/BaqylauServer/ }
           Compress-Archive -Path srv/BaqylauServer -DestinationPath BaqylauServer-win64.zip -Force
 
       - name: Upload artifacts

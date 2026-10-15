@@ -927,6 +927,25 @@ class BentoWindow(QMainWindow):
         except Exception as exc:
             logger.warning("snapshot failed: %s", exc)
 
+    def _play_notif(self) -> None:
+        """Звук уведомлений (fuckensound.wav, Windows winsound, async)."""
+        try:
+            import sys as _sys
+            base = getattr(_sys, "_MEIPASS", None)
+            if not base:
+                base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+            p = os.path.join(base, "fuckensound.wav")
+            if not os.path.exists(p):
+                return
+            try:
+                import winsound as _w
+            except Exception:
+                return
+            _w.PlaySound(os.path.abspath(p),
+                         _w.SND_FILENAME | _w.SND_ASYNC | _w.SND_NODEFAULT)
+        except Exception:
+            pass
+
     def _push_feed(self, level: str, kind: str, detail: str) -> None:
         self._add_feed_item(level, kind, detail)
 
@@ -946,6 +965,10 @@ class BentoWindow(QMainWindow):
 
                     QMessageBox.warning(self, "Baqylau — предупреждение",
                                         str(wtxt) + "\nВернись к экзамену.")
+                    try:
+                        self._play_notif()
+                    except Exception:
+                        pass
                 except Exception:
                     pass
                 self._push_feed("HIGH", "warn", str(wtxt))
@@ -954,6 +977,7 @@ class BentoWindow(QMainWindow):
                 self._session_active = True
                 self._start_capture()
                 self.badge.setText(self._t("badge_going"))
+                self._play_notif()
                 self._push_feed("LOW", "session", f"Экзамен запущен: {s.get('title', '')}")
                 self._load_exam()
             elif self._session_active and self._session_id is not None and status != "active":
@@ -966,6 +990,7 @@ class BentoWindow(QMainWindow):
                     pass
                 self._exam_deadline = 0.0
                 self.badge.setText(self._t("badge_done"))
+                self._play_notif()
                 self._push_feed("LOW", "session", "Экзамен завершён преподавателем")
         except Exception as exc:
             logger.debug("session poll failed: %s", exc)

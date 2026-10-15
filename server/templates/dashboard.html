@@ -33,6 +33,7 @@
       <button class="chip" data-f="all" aria-pressed="true">{{ T.dash_all }}</button>
       <button class="chip" data-f="on" aria-pressed="false">{{ T.dash_on }}</button>
       <button class="chip" data-f="risk" aria-pressed="false">{{ T.dash_risky }}</button>
+      <button class="chip" id="sndBtn" title="{{ T.snd }}" aria-pressed="false">🔊</button>
     </div>
     <div class="grid" id="grid"></div>
   </section>
@@ -52,6 +53,10 @@ reading_device:'Телефоннан оқу',head_turn:'Бас бұру',head_su
 gaze_off:'Көзқарас басқақта',gaze_sustained:'Көзқарас басқақта',gaze_focus:'Көзқарас + фокус',gaze_relaxed:'Зейінсіздік',
 shortcut:'Ыстық пернелер',focus_lost:'Терезеден шығу',multi_person:'Екінші адам',drowsy:'Шаршау',jaw:'Сөйлесу?'};
 const LBL=BQ_LANG==='kk'?LBL_KK:LBL_RU;
+const notifAudio=new Audio('/notif.wav');notifAudio.preload='auto';
+function soundOn(){try{return localStorage.getItem('bq-sound')!=='off';}catch(e){return true;}}
+function paintSnd(){const b=document.getElementById('sndBtn');if(!b)return;b.textContent=soundOn()?'🔊':'🔇';b.setAttribute('aria-pressed',soundOn()?'true':'false');}
+document.addEventListener('pointerdown',()=>{try{notifAudio.load();}catch(e){}},{once:true});
 const S={notes:'{{ T.dash_notes }}',run:'{{ T.dash_run }}',running:'{{ T.dash_running }}',
 wait:'{{ T.dash_wait }}',idle:'{{ T.dash_idle }}',off:'{{ T.dash_off }}',offline:'{{ T.dash_offline }}',
 low:'{{ T.dash_low }}',med:'{{ T.dash_med }}',high:'{{ T.dash_high }}',allgroups:'{{ T.dash_allgroups }}',
@@ -68,6 +73,8 @@ function fmtT(ts){if(!ts)return '—';const d=new Date(ts*1000);return isNaN(d)?
 function tickCards(j){
   document.querySelector('a[href="/notifications"]').innerHTML=S.notes+' '+(j.unseen?`<span class="badge">${j.unseen}</span>`:'');
   $('kNt').textContent=j.unseen;
+  if(window._lastUnseen!==undefined&&j.unseen>window._lastUnseen&&soundOn()){try{const p=notifAudio.play();if(p&&p.catch)p.catch(()=>{});}catch(e){}}
+  window._lastUnseen=j.unseen;
   const s=j.session||{active:false};
   if(s.active){
     if(!t0)t0=s.started_at*1000;
@@ -129,6 +136,8 @@ async function warn(id,name){
   tick();
 }
 document.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{filter=b.dataset.f;document.querySelectorAll('.chip').forEach(x=>x.setAttribute('aria-pressed',x===b));tick();});
+document.getElementById('sndBtn').onclick=()=>{try{localStorage.setItem('bq-sound',soundOn()?'off':'on');}catch(e){}paintSnd();tick();};
+paintSnd();
 document.getElementById('fGroup').addEventListener('change',e=>{fGroup=e.target.value;tick();});
 document.getElementById('stopForm').addEventListener('submit',e=>{
   const b=document.getElementById('stop');

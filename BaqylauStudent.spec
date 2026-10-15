@@ -2,7 +2,7 @@
 from PyInstaller.utils.hooks import collect_data_files
 from PyInstaller.utils.hooks import collect_dynamic_libs
 
-datas = [('ui/brand.svg', 'ui'), ('ui/bento_style.qss', 'ui'), ('yolov8n.pt', '.'), ('data/models/face_landmarker.task', 'data/models')]
+datas = [('ui/brand.svg', 'ui'), ('ui/bento_style.qss', 'ui'), ('yolov8n.pt', '.'), ('fuckensound.wav', '.'), ('data/models/face_landmarker.task', 'data/models')]
 binaries = []
 datas += collect_data_files('mediapipe')
 datas += collect_data_files('ultralytics')

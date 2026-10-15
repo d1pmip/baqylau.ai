@@ -68,7 +68,7 @@ jobs:
           rm -rf dist-srv BaqylauServer-win64.zip
           mkdir -p dist-srv/BaqylauServer
           cp -r server dist-srv/BaqylauServer/
-          for f in requirements-server.txt start_server.bat start_server.sh BaqylauServer.vbs README.md README_KK.md config.py; do
+          for f in requirements-server.txt start_server.bat start_server.sh BaqylauServer.vbs README.md README_KK.md config.py fuckensound.wav; do
             [ -f "$f" ] && cp "$f" dist-srv/BaqylauServer/
           done
           # мусор и кэш не pack-аем
