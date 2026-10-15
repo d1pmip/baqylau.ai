@@ -977,7 +977,6 @@ class BentoWindow(QMainWindow):
                 self._session_active = True
                 self._start_capture()
                 self.badge.setText(self._t("badge_going"))
-                self._play_notif()
                 self._push_feed("LOW", "session", f"Экзамен запущен: {s.get('title', '')}")
                 self._load_exam()
             elif self._session_active and self._session_id is not None and status != "active":
@@ -990,7 +989,6 @@ class BentoWindow(QMainWindow):
                     pass
                 self._exam_deadline = 0.0
                 self.badge.setText(self._t("badge_done"))
-                self._play_notif()
                 self._push_feed("LOW", "session", "Экзамен завершён преподавателем")
         except Exception as exc:
             logger.debug("session poll failed: %s", exc)

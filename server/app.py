@@ -415,12 +415,16 @@ def create_app(db_path: str = DB) -> Flask:
             recent = c.execute(
                 "SELECT ts,student AS who,detail AS text,kind FROM notifications "
                 "ORDER BY id DESC LIMIT 8").fetchall()
+            last = c.execute(
+                "SELECT id, kind FROM notifications ORDER BY id DESC LIMIT 1").fetchone()
             return jsonify({
                 "cards": cards, "unseen": unseen, "active": bool(sess),
                 "session": ({"active": True, "title": _exam_title(c, s0["exam_id"]),
                              "started_at": s0["started_at"]} if s0
                             else {"active": False}),
                 "recent": [dict(r) for r in recent],
+                "max_id": last["id"] if last else 0,
+                "last_kind": last["kind"] if last else "",
             })
         finally:
             c.close()

@@ -73,8 +73,9 @@ function fmtT(ts){if(!ts)return '—';const d=new Date(ts*1000);return isNaN(d)?
 function tickCards(j){
   document.querySelector('a[href="/notifications"]').innerHTML=S.notes+' '+(j.unseen?`<span class="badge">${j.unseen}</span>`:'');
   $('kNt').textContent=j.unseen;
-  if(window._lastUnseen!==undefined&&j.unseen>window._lastUnseen&&soundOn()){try{const p=notifAudio.play();if(p&&p.catch)p.catch(()=>{});}catch(e){}}
-  window._lastUnseen=j.unseen;
+  if(window._lastMid!==undefined&&j.max_id>window._lastMid&&soundOn()
+     &&['RISK100','photo','video'].includes(j.last_kind)){try{const p=notifAudio.play();if(p&&p.catch)p.catch(()=>{});}catch(e){}}
+  window._lastMid=j.max_id;window._lastUnseen=j.unseen;
   const s=j.session||{active:false};
   if(s.active){
     if(!t0)t0=s.started_at*1000;
