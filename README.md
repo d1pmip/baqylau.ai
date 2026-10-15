@@ -1,95 +1,95 @@
-# 🍈 Baqylau.ai — локальный AI-прокторинг
+# 🍈 Baqylau.ai — Local AI Proctoring
 
-**[Русский](README.md) | [Қазақша](README_KK.md)**
+**[English](README.md) | [Русский](README_RU.md) | [Қазақша](README_KK.md)**
 
-Локальная система контроля онлайн-экзаменов: детекция смартфонов (YOLO),
-контроль взгляда и головы (MediaPipe), защита рабочего окружения
-(блокировка горячих клавиш и чужих окон). Вся обработка — внутри сети
-учебного заведения, данные студентов никуда не уходят.
+Local online exam monitoring system: smartphone detection (YOLO),
+gaze and head tracking (MediaPipe), workspace protection
+(hotkey blocking and foreign-window control). All processing stays inside
+the institution network — student data never leaves.
 
-Кейс: Qostanai Industry Hackathon, «Локальный прокторинг» · Demo Day 16.10.2026.
+Case: Qostanai Industry Hackathon, "Local Proctoring" · Demo Day 16.10.2026.
 
-## Скачать готовое
+## Download ready builds
 
-Релизы выходят отдельно — сайт и приложение не смешиваются:
+Releases are kept separate — website and app don't mix:
 
-- **Приложение ученика (только Windows)** — релизы с тегом `student-vX`:
+- **Student app (Windows only)** — releases tagged `student-vX`:
   [Releases](https://github.com/dima-mip/baqylau.ai/releases) →
-  `BaqylauStudent-win64.zip`: распаковать и запустить `BaqylauStudent.exe`
-  (окно сразу в полноэкранном режиме).
-- **Сайт/панель (Windows и Linux)** — релизы с тегом `server-vX`:
-  `BaqylauServer-win64.zip`: распаковать, поставить Flask
-  (`pip install -r requirements-server.txt`), запустить `start_server.bat`
-  (Windows) или `./start_server.sh` (Linux). Первый вход: `admin / admin123`.
+  `BaqylauStudent-win64.zip`: unzip and run `BaqylauStudent.exe`
+  (window opens fullscreen immediately).
+- **Website/panel (Windows and Linux)** — releases tagged `server-vX`:
+  `BaqylauServer-win64.zip`: unzip, install Flask
+  (`pip install -r requirements-server.txt`), run `start_server.bat`
+  (Windows) or `./start_server.sh` (Linux). First login: `admin / admin123`.
 
-## Как это работает
+## How it works
 
-- **Приложение ученика** (десктоп, PySide6): вход по логину, камера
-  включается только после старта экзамена преподавателем. Во время
-  экзамена показывает только тест — ни камеры, ни риска, ни ленты нарушений.
-- **Веб-панель преподавателя** (Flask, лёгкая): карточки учеников с
-  миниатюрами камер, риск, главные нарушения, запуск/остановка экзамена,
-  уведомления с фото/видео-доказательствами.
-- **Админ** видит всё: пользователи, аудит действий, все доказательства
-  и результаты.
+- **Student app** (desktop, PySide6): login, camera turns on only after
+  the teacher starts the exam. During the exam it shows only the test —
+  no camera, no risk, no violation feed.
+- **Teacher web panel** (Flask, lightweight): student cards with
+  camera thumbnails, risk score, main violations, exam start/stop,
+  notifications with photo/video evidence.
+- **Admin** sees everything: users, action audit, all evidence
+  and results.
 
-## Что детектируется
+## What is detected
 
-| Событие | Уровень |
+| Event | Level |
 |---|---|
-| Телефон в кадре / поднят к экрану (съёмка) | CRITICAL |
-| Взгляд вниз + телефон (чтение с устройства) | CRITICAL |
-| Голова повёрнута дольше 3 с | HIGH |
-| Взгляд мимо дольше 4 с | HIGH |
-| Второе лицо, уход из окна экзамена, запрещённые клавиши | HIGH/MEDIUM |
-| RISK 100 | фото + ~9 с видео → уведомление + локально (+ Drive) |
+| Phone in frame / raised to screen (filming) | CRITICAL |
+| Gaze down + phone (reading from device) | CRITICAL |
+| Head turned for more than 3 s | HIGH |
+| Gaze away for more than 4 s | HIGH |
+| Second face, leaving exam window, forbidden keys | HIGH/MEDIUM |
+| RISK 100 | photo + ~9 s video → notification + locally (+ Drive) |
 
-## Запуск
+## Run
 
-**Панель (ПК преподавателя, Windows и Linux):** двойной клик
-`start_server.bat` (Windows) или `./start_server.sh` (Linux),
-либо вручную:
+**Panel (teacher PC, Windows and Linux):** double-click
+`start_server.bat` (Windows) or `./start_server.sh` (Linux),
+or manually:
 ```bash
 cd baqylau
-python -m server.app   # http://<ip>:5050, первый вход: admin / admin123
+python -m server.app   # http://<ip>:5050, first login: admin / admin123
 ```
 
-**Ученик (только Windows):** готовый `BaqylauStudent.exe` — из
-[Releases](https://github.com/dima-mip/baqylau.ai/releases) (не требует
-Python, окно открывается сразу в полноэкранном режиме).
-Либо `start_student.bat` / `BaqylauStudent.vbs`.
+**Student (Windows only):** ready-made `BaqylauStudent.exe` — from
+[Releases](https://github.com/dima-mip/baqylau.ai/releases) (no Python
+required, window opens fullscreen immediately).
+Or `start_student.bat` / `BaqylauStudent.vbs`.
 
-Сборка EXE из исходников: `build_exe.bat` (10–20 мин, нужен интернет
-для pip). Модели (`yolov8n.pt`, `face_landmarker.task`) уже вшиты.
+Build EXE from source: `build_exe.bat` (10–20 min, internet required
+for pip). Models (`yolov8n.pt`, `face_landmarker.task`) are already bundled.
 
-**Детали ученика:** окно входа (сервер + логин/пароль или локальный
-режим) → тест появляется после старта экзамена преподавателем.
+**Student details:** login window (server + login/password or local
+mode) → test appears after the teacher starts the exam.
 
-**Консольный HUD (разработка):** `python main.py --simulate-eeg`
+**Console HUD (development):** `python main.py --simulate-eeg`
 
-## Калибровка взгляда (opt-in)
+## Gaze calibration (opt-in)
 
-По умолчанию выключена. Кнопка 🎯 — гидовая калибровка по 5 точкам
-(центр/лево/право/верх/низ, ~8 с): персональный ноль и пороги.
-`--quick-calib` — быстрые 2 с. Во время калибровки риск заморожен.
+Disabled by default. 🎯 button — guided 5-point calibration
+(center/left/right/up/down, ~8 s): personal zero and thresholds.
+`--quick-calib` — fast 2 s. Risk is frozen during calibration.
 
-## Структура
+## Structure
 
 ```
 baqylau/
-├── main_gui.py / main.py   # приложение ученика / консольный HUD
-├── server/                 # веб-панель (Flask + SQLite)
-├── core/vision/            # YOLO-детектор, поза/взгляд
-├── core/eeg/               # Muse EEG (бонус-канал, опционально)
-├── core/fusion/            # риск-движок, синхронизация, алерты
-├── core/security/          # блокировка клавиш, контроль окна
-├── core/net/               # клиент панели (stdlib)
-├── ui/                     # Bento-интерфейс, бренд, QSS
-└── docs/brand.md           # палитра и карта хранилищ
+├── main_gui.py / main.py   # student app / console HUD
+├── server/                 # web panel (Flask + SQLite)
+├── core/vision/            # YOLO detector, pose/gaze
+├── core/eeg/               # Muse EEG (bonus channel, optional)
+├── core/fusion/            # risk engine, sync, alerts
+├── core/security/          # key blocking, window control
+├── core/net/               # panel client (stdlib)
+├── ui/                     # Bento interface, brand, QSS
+└── docs/brand.md           # palette and storage map
 ```
 
-## Где лежат записи
+## Where recordings are stored
 
-- ПК ученика: `data/logs/snapshots/` (фото/видео), `events.jsonl`
-- Сервер: `data/evidence/`, база `data/baqylau.db`
-- Google Drive — опционально (`BAQYLAU_DRIVE_FOLDER_ID` + credentials)
+- Student PC: `data/logs/snapshots/` (photos/videos), `events.jsonl`
+- Server: `data/evidence/`, DB `data/baqylau.db`
+- Google Drive — optional (`BAQYLAU_DRIVE_FOLDER_ID` + credentials)
