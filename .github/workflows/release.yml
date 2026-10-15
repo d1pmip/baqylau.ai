@@ -89,6 +89,9 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      - name: Install UPX (smaller EXE)
+        run: choco install upx -y --no-progress
+
       - name: Build BaqylauStudent.exe
         run: pyinstaller --noconfirm --clean BaqylauStudent.spec
 

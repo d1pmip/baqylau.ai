@@ -341,6 +341,14 @@ h2 .msr{font-size:24px;vertical-align:-5px}
 .shield .msr{font-size:16px}
 #themeBtn .msr{font-size:22px}
 .auth-submit .msr{font-size:20px;vertical-align:-4px}
+/* site confirm/alert modal — вместо браузерных confirm()/alert() */
+.bqmodal{position:fixed;inset:0;z-index:100;display:grid;place-items:center;background:rgba(26,26,26,.45);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);padding:20px}
+.bqmodal[hidden]{display:none}
+.bqmodal-card{max-width:440px;width:100%;padding:24px;display:flex;flex-direction:column;gap:18px;animation:cardIn .35s cubic-bezier(.16,1,.3,1) both}
+.bqmodal-card p{margin:0;font-size:15px;font-weight:600;line-height:1.5}
+.bqmodal-acts{display:flex;gap:10px;justify-content:flex-end}
+.bqmodal-acts .btn,.bqmodal-acts .ghost{min-width:110px}
+@media(prefers-reduced-motion:reduce){.bqmodal-card{animation:none}}
 </style>
 <script>try{if(localStorage.getItem('bq-theme')==='dark')document.documentElement.dataset.theme='dark';}catch(e){}</script>
 </head><body>
@@ -368,6 +376,15 @@ h2 .msr{font-size:24px;vertical-align:-5px}
 <div class="foot"><span>Локальный прокторинг</span><span>Baqylau.ai</span></div>
 </div>
 <button id="themeBtn" title="Тёмная/светлая тема"><span class="msr ic-moon">dark_mode</span><span class="msr ic-sun" style="display:none">light_mode</span></button>
+<div id="bqModal" class="bqmodal" hidden>
+  <div class="bqmodal-card card" role="alertdialog" aria-modal="true" aria-labelledby="bqModalTxt">
+    <p id="bqModalTxt"></p>
+    <div class="bqmodal-acts">
+      <button class="btn go" id="bqModalOk" type="button">OK</button>
+      <button class="ghost" id="bqModalCancel" type="button">Отмена</button>
+    </div>
+  </div>
+</div>
 <script>
 (function(){var b=document.getElementById('themeBtn');
 function paint(){var d=document.documentElement.dataset.theme==='dark';
@@ -376,5 +393,21 @@ b.onclick=function(){var d=document.documentElement;
 if(d.dataset.theme==='dark'){delete d.dataset.theme;try{localStorage.setItem('bq-theme','light');}catch(e){}}
 else{d.dataset.theme='dark';try{localStorage.setItem('bq-theme','dark');}catch(e){}}paint();};
 paint();})();
+</script>
+<script>
+/* Подтверждения через сайт, а не браузерный confirm(): формы с data-confirm
+   показывают модалку и сабмитятся только после OK. */
+(function(){var m=document.getElementById('bqModal'),t=document.getElementById('bqModalTxt'),
+ok=document.getElementById('bqModalOk'),cb=document.getElementById('bqModalCancel'),fn=null;
+function close(v){m.hidden=true;var f=fn;fn=null;if(f)f(v);}
+ok.onclick=function(){close(true);};cb.onclick=function(){close(false);};
+m.onclick=function(e){if(e.target===m)close(false);};
+document.addEventListener('keydown',function(e){if(!m.hidden&&e.key==='Escape')close(false);});
+window.bqConfirm=function(msg){t.textContent=msg;m.hidden=false;ok.textContent='OK';cb.style.display='';ok.focus();return new Promise(function(r){fn=r;});};
+window.bqAlert=function(msg){t.textContent=msg;m.hidden=false;ok.textContent='Понятно';cb.style.display='none';ok.focus();return new Promise(function(r){fn=r;});};
+document.querySelectorAll('form[data-confirm]').forEach(function(f){
+f.addEventListener('submit',function(e){if(f.dataset.armed)return;e.preventDefault();
+bqConfirm(f.dataset.confirm).then(function(v){if(v){f.dataset.armed='1';f.submit();}});});});
+})();
 </script>
 </body></html>

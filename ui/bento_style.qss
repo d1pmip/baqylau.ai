@@ -2,10 +2,10 @@
 QMainWindow { background: #F4F6F0; font-family: "Segoe UI", "Inter", sans-serif; }
 QWidget { font-family: "Segoe UI", "Inter", sans-serif; }
 QLabel { color: #1A1A1A; }
-QLabel#AppTitle { font-size: 24px; font-weight: 900; letter-spacing: 0.5px; }
-QLabel#AppSub { font-size: 12px; color: #6B6B6B; }
-QLabel#CardTitle { font-size: 14px; font-weight: 800; color: #1A1A1A; letter-spacing: 0.3px; }
-QLabel#RiskBig { font-size: 36px; font-weight: 900; letter-spacing: 0.5px; }
+QLabel#AppTitle { font-size: 28px; font-weight: 900; letter-spacing: 0.5px; }
+QLabel#AppSub { font-size: 13px; color: #6B6B6B; }
+QLabel#CardTitle { font-size: 16px; font-weight: 900; color: #1A1A1A; letter-spacing: 0.3px; }
+QLabel#RiskBig { font-size: 40px; font-weight: 900; letter-spacing: 0.5px; }
 QLabel#VideoLabel {
   background: #1E1E1E; color: #FFFFFF;
   border-radius: 14px; border: 2px solid #2E2E2E;
@@ -27,11 +27,11 @@ QLabel#Avatar {
   border-radius: 18px; min-width: 36px; min-height: 36px; max-width: 36px; max-height: 36px;
 }
 QLabel#Badge {
-  background: #D4F5A6; color: #1A3A1A; font-weight: 800; font-size: 12px;
-  border-radius: 14px; padding: 8px 14px;
+  background: #D4F5A6; color: #1A3A1A; font-weight: 900; font-size: 14px;
+  border-radius: 14px; padding: 9px 16px;
 }
 QLabel#Badge.paused { background: #FFF4A3; color: #5A4A00; }
-QLabel#Dot { font-size: 14px; font-weight: 800; }
+QLabel#Dot { font-size: 16px; font-weight: 900; }
 QPushButton {
   border: none; border-radius: 12px; padding: 10px 18px;
   font-size: 13px; font-weight: 800; color: #1A1A1A;
@@ -64,18 +64,23 @@ QRadioButton { font-size: 14px; color: #1A1A1A; spacing: 10px; padding: 6px 4px;
 QRadioButton::indicator { width: 20px; height: 20px; border-radius: 11px; border: 2px solid #BDBDBD; background: #FFFFFF; }
 QRadioButton::indicator:hover { border: 2px solid #1A1A1A; }
 QRadioButton::indicator:checked { border: 2px solid #1A1A1A; background: qradialgradient(cx:0.5, cy:0.5, radius:0.5, fx:0.5, fy:0.5, stop:0 #1A1A1A, stop:0.45 #1A1A1A, stop:0.5 #FFFFFF, stop:1 #FFFFFF); }
-QLabel#ExamQ { font-size: 15px; font-weight: 800; color: #1A1A1A; margin-top: 10px; }
-QLabel#ExamMeta { font-size: 12px; color: #6B6B6B; }
+QLabel#ExamQ { font-size: 17px; font-weight: 800; color: #1A1A1A; margin-top: 10px; }
+/* Вопрос без картинки: крупнее, занимает всю ширину карточки */
+QLabel#ExamQBig { font-size: 20px; font-weight: 900; color: #1A1A1A; margin-top: 12px; }
+QLabel#ExamMeta { font-size: 13px; font-weight: 600; color: #6B6B6B; }
 /* Чёрный медиа-бокс как .cam на сайте: скругление 14, бейдж статуса справа */
 QFrame#MediaBox { background: #1E1E1E; border-radius: 14px; }
 QFrame#MediaBox QLabel { color: #FFFFFF; }
-QLabel#MediaBadge { background: #E4E4E4; color: #1A1A1A; font-weight: 800; font-size: 11px;
-  border-radius: 10px; padding: 3px 10px; }
+QLabel#MediaBadge { background: #E4E4E4; color: #1A1A1A; font-weight: 900; font-size: 12px;
+  border-radius: 10px; padding: 4px 12px; }
 QLabel#MediaBadge[done="true"] { background: #D4F5A6; color: #1A3A1A; }
+/* Картинка вопроса: прозрачный фон, без лишней рамки — бокс обнимает фото */
+QLabel#ExamImg { background: transparent; border: none; }
 /* Сегмент-бар риска как .track на сайте */
 QFrame#RiskSeg { background: #E4E4E4; border-radius: 4px; min-height: 8px; max-height: 8px; }
-QRadioButton#ExamOpt { font-size: 15px; font-weight: 600; color: #1A1A1A; border-radius: 12px; padding: 9px 10px; border: 1px solid transparent; }
-QRadioButton#ExamOpt:hover { background: #F1F1EA; border: 1px solid #D8D4FF; }
+QRadioButton#ExamOpt { font-size: 16px; font-weight: 600; color: #1A1A1A; border-radius: 12px; padding: 10px 12px; border: 1px solid transparent; background: transparent; }
+QRadioButton#ExamOpt:hover { background: #FFFFFF; border: 1px solid #D8D4FF; }
+QRadioButton#ExamOpt:pressed { background: #ECECFB; border: 1px solid #D8D4FF; }
 QRadioButton#ExamOpt[picked="true"] { background: #D8D4FF; font-weight: 900; color: #000000; }
 /* Точки-индикаторы: серые кружки, активная — зелёный овал (палитра без изменений) */
 QPushButton#ExamDot { background: #CFCFCF; border: none; border-radius: 5px;

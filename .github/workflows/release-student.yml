@@ -66,13 +66,46 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build BaqylauStudent.exe
+      - name: Install UPX (smaller EXE)
+        run: choco install upx -y --no-progress
+
+      - name: Obfuscate sources (PyArmor, optional)
+        # Обфускация своего кода. Без секрета PYARMOR_LICENSE шаг пропускается —
+        # EXE всё равно содержит только скомпилированный .pyc, .py-исходников нет.
+        # Включить: Repo Settings -> Secrets -> Actions -> PYARMOR_LICENSE
+        # (содержимое файла лицензии PyArmor).
+        env:
+          PYARMOR_LICENSE: ${{ secrets.PYARMOR_LICENSE }}
+        run: |
+          if ([string]::IsNullOrEmpty($env:PYARMOR_LICENSE)) {
+            echo "No PYARMOR_LICENSE secret — skip obfuscation (bundle ships .pyc only)"
+            exit 0
+          }
+          python -m pip install pyarmor
+          $lic = Join-Path $env:RUNNER_TEMP 'pyarmor-license.txt'
+          Set-Content -Path $lic -Value $env:PYARMOR_LICENSE -Encoding ascii -NoNewline
+          pyarmor reg $lic
+          New-Item -ItemType Directory -Force build-obf | Out-Null
+          git archive HEAD core ui config.py main_gui.py BaqylauStudent.spec yolov8n.pt data/models | tar -x -C build-obf
+          pyarmor gen --output build-obf --recursive build-obf/core build-obf/ui build-obf/config.py build-obf/main_gui.py
+          if ($LASTEXITCODE -eq 0) { echo "OBF_DONE=1" >> $env:GITHUB_ENV }
+          else { echo "PyArmor failed — fallback to plain build" }
+
+      - name: Build BaqylauStudent.exe (plain)
+        if: env.OBF_DONE != '1'
         run: pyinstaller --noconfirm --clean BaqylauStudent.spec
+
+      - name: Build BaqylauStudent.exe (obfuscated)
+        if: env.OBF_DONE == '1'
+        run: |
+          cd build-obf
+          pyinstaller --noconfirm --clean BaqylauStudent.spec
 
       - name: Pack student bundle
         run: |
+          $exe = if (Test-Path build-obf/dist/BaqylauStudent.exe) { 'build-obf/dist/BaqylauStudent.exe' } else { 'dist/BaqylauStudent.exe' }
           New-Item -ItemType Directory -Force pkg | Out-Null
-          Copy-Item dist/BaqylauStudent.exe pkg/
+          Copy-Item $exe pkg/
           Copy-Item BaqylauStudent.vbs, start_student.bat pkg/
           Compress-Archive -Path pkg/* -DestinationPath BaqylauStudent-win64.zip -Force
           Get-Item BaqylauStudent-win64.zip

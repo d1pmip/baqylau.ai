@@ -32,8 +32,8 @@ function pack(){const out=[];let bad='';
   if(!t)bad='У всех вопросов должен быть текст';
   else if(opts.length<2)bad='Нужно минимум 2 варианта ответа';
   else out.push({q:d.querySelector('.qt').value,options:[...d.querySelectorAll('.qo')].map(i=>i.value),correct:c?+c.value:0});});
- if(bad){alert(bad);return false;}
- if(!out.length){alert('Добавьте хотя бы один вопрос');return false;}
+ if(bad){bqAlert(bad);return false;}
+ if(!out.length){bqAlert('Добавьте хотя бы один вопрос');return false;}
  document.getElementById('qj').value=JSON.stringify(out);return true;}
 addQ();
 </script>{% endblock %}

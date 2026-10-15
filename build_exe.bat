@@ -5,7 +5,7 @@ cd /d "%~dp0"
 where python >nul 2>nul || (echo [Baqylau] Python not found & pause & exit /b 1)
 python -m pip install --quiet pyinstaller
 if errorlevel 1 (echo [Baqylau] pip failed & pause & exit /b 1)
-python -m PyInstaller --noconfirm --clean --onefile --windowed ^
+python -m PyInstaller --noconfirm --clean --onefile --windowed --strip --upx ^
   --name BaqylauStudent ^
   --add-data "ui\brand.svg;ui" ^
   --add-data "ui\bento_style.qss;ui" ^
@@ -16,6 +16,11 @@ python -m PyInstaller --noconfirm --clean --onefile --windowed ^
   --collect-binaries mediapipe ^
   --exclude-module brainflow ^
   --exclude-module torch.testing ^
+  --exclude-module tkinter ^
+  --exclude-module unittest ^
+  --exclude-module test ^
+  --exclude-module pydoc ^
+  --exclude-module doctest ^
   main_gui.py
 if errorlevel 1 (echo [Baqylau] BUILD FAILED & pause & exit /b 1)
 echo.

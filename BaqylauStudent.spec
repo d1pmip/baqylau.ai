@@ -8,6 +8,9 @@ datas += collect_data_files('mediapipe')
 datas += collect_data_files('ultralytics')
 binaries += collect_dynamic_libs('mediapipe')
 
+# Меньше вес: strip символов + без отладочных модулей.
+# scipy/matplotlib/pandas НЕ исключаем — нужны EEG-фильтрам и отчётам.
+
 
 a = Analysis(
     ['main_gui.py'],
@@ -18,7 +21,8 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['brainflow', 'torch.testing'],
+    excludes=['brainflow', 'torch.testing',
+              'tkinter', 'unittest', 'test', 'pydoc', 'doctest'],
     noarchive=False,
     optimize=0,
 )
@@ -33,7 +37,7 @@ exe = EXE(
     name='BaqylauStudent',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=False,
+    strip=True,
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,

@@ -10,5 +10,5 @@
 <div class="tblwrap"><table><tr><th>Логин</th><th>Имя</th><th>Роль</th><th></th></tr>
 {% for u in users %}<tr><td><b>{{ u.username }}</b></td><td>{{ u.full_name }}</td>
 <td><span class="pill {{ 'CRITICAL' if u.role=='admin' else 'MEDIUM' }}">{{ u.role }}</span></td>
-<td>{% if u.username != session.user.username %}<form method="post" action="/users/{{ u.id }}/delete" style="display:inline"><button class="btn r sm" type="submit" title="Удалить пользователя" onclick="return confirm('Удалить {{ u.username }}?')"><span class="msr">close</span></button></form>{% endif %}</td></tr>{% endfor %}</table></div></div>
+<td>{% if u.username != session.user.username %}<form method="post" action="/users/{{ u.id }}/delete" style="display:inline" data-confirm="Удалить {{ u.username }}?"><button class="btn r sm" type="submit" title="Удалить пользователя"><span class="msr">close</span></button></form>{% endif %}</td></tr>{% endfor %}</table></div></div>
 {% endblock %}

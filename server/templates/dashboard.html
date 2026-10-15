@@ -110,7 +110,7 @@ async function tick(){try{const r=await fetch('/api/teacher/state');if(!r.ok)thr
 if(j.error){location.href='/login';return;}
 document.body.classList.remove('offline');tickCards(j);}catch(e){showOffline();}}
 async function warn(id,name){
-  if(!confirm(`Отправить предупреждение ученику «${name}»?`))return;
+  const v=await bqConfirm(`Отправить предупреждение ученику «${name}»?`);if(!v)return;
   await fetch('/api/warn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({student_id:id})});
   tick();
 }

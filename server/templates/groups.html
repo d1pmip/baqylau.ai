@@ -16,7 +16,7 @@
 <button class="btn p" type="submit">+ Группа</button></form>
 <div class="tblwrap"><table><tr><th>ID</th><th>Название</th><th>Описание</th><th>Учеников</th><th></th></tr>
 {% for g in groups %}<tr><td>{{ g.id }}</td><td><b>{{ g.name }}</b></td><td>{{ g.description }}</td><td>{{ gcounts.get(g.id, 0) }}</td>
-<td><form method="post" style="display:inline" onsubmit="return confirm('Удалить группу? Ученики останутся, но отвяжутся от неё.');"><input type="hidden" name="action" value="del_group">
+<td><form method="post" style="display:inline" data-confirm="Удалить группу? Ученики останутся, но отвяжутся от неё."><input type="hidden" name="action" value="del_group">
 <input type="hidden" name="id" value="{{ g.id }}"><button class="btn r sm" type="submit" title="Удалить группу"><span class="msr">close</span></button></form></td></tr>
 {% else %}<tr><td colspan="5"><div class="empty">Создайте первую группу</div></td></tr>{% endfor %}</table></div></div>
 <div class="card block"><div class="sec">Ученики</div>
@@ -37,9 +37,9 @@
 </div>
 <div class="tblwrap"><table id="studTable"><tr><th>ФИО</th><th>Логин</th><th>Пароль</th><th>Группа</th><th></th></tr>
 {% for s in students %}<tr data-s="1" data-g="{{ s.group_id or '' }}"><td><b>{{ s.full_name }}</b></td><td>{{ s.username }}</td>
-<td>{% if s.pass_plain %}<span class="pwdots">••••••••</span><span class="pwreal" style="display:none"><b>{{ s.pass_plain }}</b></span> <button class="iconbtn pweye" type="button" title="Показать пароль"><span class="msr">visibility</span></button>{% else %}<span class="muted">—</span> <form method="post" style="display:inline" onsubmit="return confirm('Сбросить пароль? Старый перестанет работать.');"><input type="hidden" name="action" value="reset_pw"><input type="hidden" name="id" value="{{ s.id }}"><button class="btn y sm" type="submit" title="Сбросить пароль">Сброс</button></form>{% endif %}</td>
+<td>{% if s.pass_plain %}<span class="pwdots">••••••••</span><span class="pwreal" style="display:none"><b>{{ s.pass_plain }}</b></span> <button class="iconbtn pweye" type="button" title="Показать пароль"><span class="msr">visibility</span></button>{% else %}<span class="muted">—</span> <form method="post" style="display:inline" data-confirm="Сбросить пароль? Старый перестанет работать."><input type="hidden" name="action" value="reset_pw"><input type="hidden" name="id" value="{{ s.id }}"><button class="btn y sm" type="submit" title="Сбросить пароль">Сброс</button></form>{% endif %}</td>
 <td>{{ s.grp or '—' }}</td>
-<td><form method="post" style="display:inline"><input type="hidden" name="action" value="del_student">
+<td><form method="post" style="display:inline" data-confirm="Удалить ученика?"><input type="hidden" name="action" value="del_student">
 <input type="hidden" name="id" value="{{ s.id }}"><button class="btn r sm" type="submit"><span class="msr">close</span></button></form></td></tr>
 {% else %}<tr><td colspan="5"><div class="empty">Нет учеников</div></td></tr>{% endfor %}</table></div>
 {% if students %}<div class="printbar"><span class="hint" id="studCount">Всего учеников: {{ students|length }}</span><button class="btn dark" id="printBtn" type="button"><span class="msr">print</span> Печать</button></div>{% endif %}
@@ -63,7 +63,7 @@ if(h)h.innerHTML=(v==='all')
 :'Excel/CSV: одна колонка «ФИО» (шапка необязательна). Ученики попадут в выбранную группу.';}
 var sync=function(){document.querySelectorAll('.sharedGroupVal').forEach(function(i){i.value=sg.value;});filterStudents();};
 sg.onchange=sync;sync();
-function needGroup(){if(sg.value==='all'){alert('Выберите конкретную группу выше (а не «Все группы»)');sg.focus();return false;}return true;}
+function needGroup(){if(sg.value==='all'){bqAlert('Выберите конкретную группу выше (а не «Все группы»)');sg.focus();return false;}return true;}
 var af=document.getElementById('addStudentForm');if(af)af.onsubmit=needGroup;
 var im=document.getElementById('importFile');if(im)im.onchange=function(){if(!needGroup()){im.value='';return;}im.form.submit();};})();
 (function(){var pb=document.getElementById('printBtn');if(!pb)return;

@@ -451,9 +451,8 @@ class BentoWindow(QMainWindow):
         self.btn_next = QPushButton("Вперед →")
         self.btn_next.setObjectName("BtnSnap")
         for _nb in (self.btn_prev, self.btn_next):
-            _nb.setFixedHeight(34)
-            _nb.setMinimumWidth(130)
-            _nb.setMaximumWidth(180)
+            _nb.setFixedHeight(40)
+            _nb.setFixedWidth(220)
             _nb.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
             try:
                 _nb.installEventFilter(self)
@@ -481,9 +480,9 @@ class BentoWindow(QMainWindow):
         self.btn_submit.setObjectName("BtnSnap")
         self.btn_submit.clicked.connect(self._submit_exam)
         # Веб .btn.big центрируется; в десктопе — компактная кнопка по центру.
-        self.btn_submit.setFixedHeight(38)
-        self.btn_submit.setMaximumWidth(320)
-        self.btn_submit.setMinimumWidth(220)
+        # Все три кнопки навигации одного размера: 220x40.
+        self.btn_submit.setFixedHeight(40)
+        self.btn_submit.setFixedWidth(220)
         self.btn_submit.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         try:
             self.btn_submit.installEventFilter(self)
@@ -514,17 +513,14 @@ class BentoWindow(QMainWindow):
         cl.setContentsMargins(14, 10, 14, 10)
         self.btn_snap = QPushButton("Сделать снимок")
         self.btn_snap.setObjectName("BtnSnap")
-        self.btn_calib = QPushButton("Калибровка")
-        self.btn_calib.setObjectName("BtnPause")
         self.btn_pause = QPushButton("Пауза")
         self.btn_pause.setObjectName("BtnPause")
         self.btn_quit = QPushButton("■  Завершить")
         self.btn_quit.setObjectName("BtnQuit")
         self.btn_snap.clicked.connect(self._snapshot)
-        self.btn_calib.clicked.connect(self._recalibrate)
         self.btn_pause.clicked.connect(self._toggle_pause)
         self.btn_quit.clicked.connect(self.close)
-        for _b in (self.btn_snap, self.btn_calib, self.btn_pause, self.btn_quit):
+        for _b in (self.btn_snap, self.btn_pause, self.btn_quit):
             _b.setFixedHeight(36)
             _b.setMinimumWidth(120)
             _b.setMaximumWidth(180)
@@ -534,7 +530,6 @@ class BentoWindow(QMainWindow):
             except Exception:
                 pass
         cl.addWidget(self.btn_snap)
-        cl.addWidget(self.btn_calib)
         cl.addWidget(self.btn_pause)
         cl.addWidget(self.btn_quit)
         cl.addStretch(1)
@@ -550,7 +545,7 @@ class BentoWindow(QMainWindow):
         if self.standalone:
             return
         for w in (self.video_card, self.eeg_card, self.fat_card, self.alerts_card,
-                  self.btn_snap, self.btn_pause, self.btn_calib):
+                  self.btn_snap, self.btn_pause):
             try:
                 w.setVisible(False)
             except Exception:
@@ -810,15 +805,6 @@ class BentoWindow(QMainWindow):
     def _push_feed(self, level: str, kind: str, detail: str) -> None:
         self._add_feed_item(level, kind, detail)
 
-    def _recalibrate(self) -> None:
-        """Кнопка: заново прогнать гидовую калибровку по 5 точкам."""
-        try:
-            self.vision.pose_gaze.start_guided()
-            self._push_feed("LOW", "calibration",
-                            "Калибровка запущена: следуйте указаниям на видео")
-        except Exception as exc:
-            logger.warning("recalibrate failed: %s", exc)
-
     # -- exam session (server mode: camera OFF until teacher starts) ------
     def _poll_session(self) -> None:
         if self.standalone or self.client is None:
@@ -954,8 +940,8 @@ class BentoWindow(QMainWindow):
                     mbox = QFrame()
                     mbox.setObjectName("MediaBox")
                     mbox.setLayout(QVBoxLayout())
-                    mbox.layout().setContentsMargins(10, 10, 10, 10)
-                    mbox.layout().setSpacing(8)
+                    mbox.layout().setContentsMargins(6, 6, 6, 6)
+                    mbox.layout().setSpacing(6)
                     mbox.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
                     _brow = QHBoxLayout()
                     _brow.setContentsMargins(0, 0, 0, 0)
@@ -966,6 +952,7 @@ class BentoWindow(QMainWindow):
                     _brow.addWidget(badge)
                     mbox.layout().addLayout(_brow)
                     img = QLabel()
+                    img.setObjectName("ExamImg")
                     img.setAlignment(Qt.AlignCenter)
                     img.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
                     img.setMinimumSize(240, 180)
@@ -974,15 +961,18 @@ class BentoWindow(QMainWindow):
                     self._exam_badges[qi] = badge
                     page.layout().addWidget(mbox, 1, Qt.AlignTop)
                 else:
+                    # Без картинки — вопрос крупнее на всю ширину карточки.
+                    qlbl.setObjectName("ExamQBig")
                     page = QWidget()
                     page.setLayout(QVBoxLayout())
-                    page.layout().setContentsMargins(8, 8, 8, 8)
-                    page.layout().setSpacing(10)
+                    page.layout().setContentsMargins(12, 12, 12, 12)
+                    page.layout().setSpacing(14)
                     page.layout().setAlignment(Qt.AlignTop)
                     page.layout().addWidget(meta)
                     page.layout().addWidget(qlbl)
                     for rb in _opts:
                         page.layout().addWidget(rb)
+                    page.layout().addStretch(1)
                 self._exam_pages.append(page)
                 self.exam_stack.addWidget(page)
                 # кликабельная точка-индикатор (серая 10px; активная станет
@@ -1266,10 +1256,11 @@ class BentoWindow(QMainWindow):
         except Exception:
             pass
 
-    def _set_hover_shadow(self, widget, on: bool) -> None:
+    def _set_hover_shadow(self, widget, on: bool, radius: float = 14.0) -> None:
         """Micro-interaction: тень плавно проявляется/гаснет (мягкий ховер).
 
-        Анимируется blurRadius 0<->12 за ~140мс — как мягкие ховеры на сайте.
+        Анимация blurRadius 0<->radius за ~480мс InOutCubic — как длинные
+        плавные ховеры на сайте (transition .5s cubic-bezier(.2,.8,.2,1)).
         Тень не трогает layout (сдвиг по pos рвал геометрию и накладывал
         варианты ответов друг на друга).
         """
@@ -1304,24 +1295,24 @@ class BentoWindow(QMainWindow):
                         pass
                     widget.setGraphicsEffect(eff)
                 anim = QPropertyAnimation(eff, b"blurRadius", self)
-                anim.setDuration(140)
+                anim.setDuration(480)
                 try:
                     anim.setStartValue(float(eff.blurRadius()))
                 except Exception:
                     anim.setStartValue(0.0)
-                anim.setEndValue(12.0)
-                anim.setEasingCurve(QEasingCurve.OutCubic)
+                anim.setEndValue(float(radius))
+                anim.setEasingCurve(QEasingCurve.InOutCubic)
             else:
                 if not isinstance(eff, QGraphicsDropShadowEffect):
                     return
                 anim = QPropertyAnimation(eff, b"blurRadius", self)
-                anim.setDuration(140)
+                anim.setDuration(480)
                 try:
                     anim.setStartValue(float(eff.blurRadius()))
                 except Exception:
-                    anim.setStartValue(12.0)
+                    anim.setStartValue(float(radius))
                 anim.setEndValue(0.0)
-                anim.setEasingCurve(QEasingCurve.OutCubic)
+                anim.setEasingCurve(QEasingCurve.InOutCubic)
 
                 def _rm() -> None:
                     try:
@@ -1343,7 +1334,7 @@ class BentoWindow(QMainWindow):
             pass
 
     def _animate_press(self, widget) -> None:
-        """Анимация нажатия: мягкое погружение opacity 1->0.82->1 (~200мс).
+        """Анимация нажатия: мягкое погружение opacity 1->0.82->1 (~320мс).
 
         Безопасна для layout (прозрачность, не геометрия). Тень ховера на
         время нажатия снимается и возвращается, если курсор остался на кнопке.
@@ -1364,15 +1355,15 @@ class BentoWindow(QMainWindow):
             widget.setGraphicsEffect(eff)
             grp = QSequentialAnimationGroup(self)
             down = QPropertyAnimation(eff, b"opacity", self)
-            down.setDuration(70)
+            down.setDuration(100)
             down.setStartValue(1.0)
             down.setEndValue(0.82)
             down.setEasingCurve(QEasingCurve.InCubic)
             up = QPropertyAnimation(eff, b"opacity", self)
-            up.setDuration(130)
+            up.setDuration(220)
             up.setStartValue(0.82)
             up.setEndValue(1.0)
-            up.setEasingCurve(QEasingCurve.OutCubic)
+            up.setEasingCurve(QEasingCurve.InOutCubic)
             grp.addAnimation(down)
             grp.addAnimation(up)
 
@@ -1407,7 +1398,7 @@ class BentoWindow(QMainWindow):
         # layout — их двигать/свечить нельзя, иначе налезают друг на друга.
         _lift_btns = (getattr(self, "btn_prev", None), getattr(self, "btn_next", None),
                       getattr(self, "btn_submit", None), getattr(self, "btn_snap", None),
-                      getattr(self, "btn_calib", None), getattr(self, "btn_pause", None),
+                      getattr(self, "btn_pause", None),
                       getattr(self, "btn_quit", None))
         try:
             from PySide6.QtCore import QEvent as _QE
@@ -1421,23 +1412,27 @@ class BentoWindow(QMainWindow):
                     return super().eventFilter(obj, event)
                 except Exception:
                     return False
+            try:
+                is_opt = getattr(obj, "objectName", lambda: "")() == "ExamOpt"
+            except Exception:
+                is_opt = False
             if et == _QE.MouseButtonPress:
                 try:
                     is_btn = isinstance(obj, QPushButton)
                 except Exception:
                     is_btn = False
-                try:
-                    is_opt = getattr(obj, "objectName", lambda: "")() == "ExamOpt"
-                except Exception:
-                    is_opt = False
                 if is_btn or is_opt:
                     self._animate_press(obj)
             elif et in (_QE.HoverEnter, _QE.Enter):
                 if obj in _lift_btns:
                     self._set_hover_shadow(obj, True)
+                elif is_opt:
+                    self._set_hover_shadow(obj, True, radius=10.0)
             elif et in (_QE.HoverLeave, _QE.Leave):
                 if obj in _lift_btns:
                     self._set_hover_shadow(obj, False)
+                elif is_opt:
+                    self._set_hover_shadow(obj, False, radius=10.0)
         except Exception:
             pass
         try:
@@ -1482,9 +1477,23 @@ class BentoWindow(QMainWindow):
                 if _retry < limit:
                     _QT.singleShot(120, lambda: self._fit_current_image(_retry + 1))
                 return
-            # split-раскладка: картинке отдана вся правая половина стека
-            # (минус отступы страницы/бокса и строка бейджа)
-            avail_w = max(220, sw // 2 - 60)
+            # split-раскладка: ширина — по РЕАЛЬНОМУ боксу (иначе pixmap шире
+            # label и QLabel обрезает картинку по краям), высота — по стеку.
+            _real_w = 0
+            try:
+                _real_w = int(lbl.width() or 0)
+            except Exception:
+                _real_w = 0
+            if _real_w < 240:
+                try:
+                    _box = lbl.parent()
+                    _real_w = int(_box.width() or 0) - 12 if _box is not None else 0
+                except Exception:
+                    _real_w = 0
+            if _real_w >= 240:
+                avail_w = max(220, _real_w - 4)
+            else:
+                avail_w = max(220, sw // 2 - 60)
             avail_h = max(180, sh - 90)
             cur = lbl.pixmap()
             scaled = pm.scaled(avail_w, avail_h, _Qt.KeepAspectRatio, _Qt.SmoothTransformation)

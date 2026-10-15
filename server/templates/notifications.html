@@ -15,10 +15,10 @@
 <p class="hint">Файлы: локально <code>data/evidence/</code> (+ Google Drive, если настроен).</p></div>
 <script>
 document.querySelectorAll('[data-del]').forEach(function(b){b.onclick=function(){
-if(!confirm('Удалить уведомление?'))return;
+bqConfirm('Удалить уведомление?').then(function(v){if(!v)return;
 var row=b.closest('tr'),id=b.dataset.del;
 fetch('/notifications/'+id+'/delete',{method:'POST',headers:{'X-Requested-With':'fetch'}})
 .then(function(r){if(!r.ok)throw 0;row.classList.add('bye');setTimeout(function(){row.remove();},380);})
-.catch(function(){alert('Не удалось удалить');});};});
+.catch(function(){bqAlert('Не удалось удалить');});});};});
 </script>
 {% endblock %}
