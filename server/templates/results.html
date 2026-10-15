@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% block t %}{{ T.r_title }}{% endblock %}{% block b %}
+<div class="pagehead"><div><small>{{ T.r_small }}</small><h2>{{ T.r_title }}</h2></div><div class="sp"></div>
+<a class="btn g" href="/results/export?exam_id={{ f_exam }}&group_id={{ f_group }}"><span class="msr">download</span> {{ T.r_export }}</a></div>
+<div class="card block">
+<form method="get" class="formrow">
+<label class="muted" for="fExam">{{ T.r_exam_f }}</label>
+<select id="fExam" name="exam_id"><option value="0">{{ T.r_all }}</option>{% for e in exams %}<option value="{{ e.id }}" {% if f_exam==e.id %}selected{% endif %}>{{ e.title }}</option>{% endfor %}</select>
+<label class="muted" for="fGroup2">{{ T.r_group_f }}</label>
+<select id="fGroup2" name="group_id"><option value="0">{{ T.r_all }}</option>{% for g in groups %}<option value="{{ g.id }}" {% if f_group==g.id %}selected{% endif %}>{{ g.name }}</option>{% endfor %}</select>
+<button class="btn dark sm" type="submit">{{ T.r_show }}</button>
+<span class="hint">{{ T.r_total }}: {{ rows|length }}</span></form>
+<div class="tblwrap"><table><tr><th>{{ T.th_student }}</th><th>{{ T.th_group }}</th><th>{{ T.th_exam }}</th><th>{{ T.th_score }}</th><th>{{ T.r_percent }}</th><th>{{ T.r_time }}</th></tr>
+{% for it in rows %}<tr><td><b>{{ it.r.student }}</b></td><td>{{ it.r.grp }}</td><td>{{ it.r.exam }}</td>
+<td>{{ it.r.score }}/{{ it.r.total }}</td>
+<td><span class="pill {{ it.cls }}">{{ it.pct }}%</span></td>
+<td class="ts">{{ it.r.submitted_at|dt }}</td></tr>
+{% else %}<tr><td colspan="6"><div class="empty">{{ T.r_empty }}</div></td></tr>{% endfor %}</table></div></div>
+{% endblock %}

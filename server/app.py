@@ -13,7 +13,7 @@ import logging
 import os
 import time
 
-from flask import (Flask, jsonify, redirect, render_template, request,
+from flask import (Flask, Response, jsonify, redirect, render_template, request,
                    send_from_directory, session, url_for)
 
 from . import db as d
@@ -698,6 +698,79 @@ def create_app(db_path: str = DB) -> Flask:
         finally:
             c.close()
         return redirect(url_for("exams"))
+
+    # ---------- web: results (teacher) ----------
+    def _results_rows(c, f_exam: int, f_group: int):
+        q = ("SELECT s.submitted_at, s.score, s.total, "
+             "COALESCE(u.full_name, u.username) AS student, u.username AS login, "
+             "COALESCE(g.name, '—') AS grp, COALESCE(e.title, '—') AS exam, "
+             "se.exam_id AS exam_id, se.group_id AS group_id "
+             "FROM submissions s "
+             "JOIN users u ON u.id=s.student_id "
+             "JOIN sessions se ON se.id=s.session_id "
+             "LEFT JOIN exams e ON e.id=se.exam_id "
+             "LEFT JOIN groups g ON g.id=se.group_id WHERE 1=1")
+        args: list = []
+        if f_exam:
+            q += " AND se.exam_id=?"
+            args.append(f_exam)
+        if f_group:
+            q += " AND se.group_id=?"
+            args.append(f_group)
+        q += " ORDER BY s.submitted_at DESC LIMIT 500"
+        return c.execute(q, args).fetchall()
+
+    @app.route("/results")
+    @login_required("teacher", "admin")
+    def results():
+        f_exam = _safe_int(request.args.get("exam_id"))
+        f_group = _safe_int(request.args.get("group_id"))
+        c = con()
+        try:
+            exams = c.execute("SELECT id, title FROM exams ORDER BY id DESC").fetchall()
+            groups = c.execute("SELECT id, name FROM groups ORDER BY name").fetchall()
+            out = []
+            for r in _results_rows(c, f_exam, f_group):
+                total = r["total"] or 0
+                pct = round(100 * r["score"] / total) if total else 0
+                out.append({"r": r, "pct": pct,
+                            "cls": "OK" if pct >= 80 else ("MEDIUM" if pct >= 50 else "HIGH")})
+            return render_template("results.html", user=me(), exams=exams, groups=groups,
+                                   rows=out, f_exam=f_exam, f_group=f_group)
+        finally:
+            c.close()
+
+    @app.route("/results/export")
+    @login_required("teacher", "admin")
+    def results_export():
+        import csv as _csv
+        import io as _io
+        f_exam = _safe_int(request.args.get("exam_id"))
+        f_group = _safe_int(request.args.get("group_id"))
+        c = con()
+        try:
+            rows = _results_rows(c, f_exam, f_group)
+            buf = _io.StringIO()
+            buf.write("\ufeff")
+            w = _csv.writer(buf, delimiter=";")
+            T = _i18n.t(_i18n.get_lang())
+            w.writerow([T["th_student"], T["th_login"], T["th_group"], T["th_exam"],
+                        T["th_score"], T["r_percent"], T["r_time"]])
+            for r in rows:
+                total = r["total"] or 0
+                pct = round(100 * r["score"] / total) if total else 0
+                try:
+                    ts = time.strftime("%d.%m.%Y %H:%M",
+                                       time.localtime(float(r["submitted_at"])))
+                except Exception:
+                    ts = ""
+                w.writerow([r["student"], r["login"], r["grp"], r["exam"],
+                            r["score"], f"{pct}%", ts])
+            data = buf.getvalue().encode("utf-8")
+        finally:
+            c.close()
+        return Response(data, mimetype="text/csv", headers={
+            "Content-Disposition": "attachment; filename=baqylau-results.csv"})
 
     # ---------- web: sessions ----------
     @app.route("/session/start", methods=["POST"])
