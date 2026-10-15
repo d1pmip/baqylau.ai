@@ -28,7 +28,7 @@ def _chat(messages: list, max_tokens: int = 2000) -> str:
     if not key:
         raise RuntimeError("GROQ_API_KEY не задан")
     body = json.dumps({"model": MODEL, "max_tokens": max_tokens,
-                       "temperature": 0.2, "messages": messages}).encode()
+                       "temperature": 0.1, "messages": messages}).encode()
     req = urllib.request.Request(
         BASE_URL.rstrip("/") + "/chat/completions", data=body,
         headers={"Authorization": "Bearer " + key,
@@ -59,7 +59,9 @@ def translate_exam_to_kk(questions: list) -> list:
         raise RuntimeError("Слишком много вопросов (макс. 100)")
     payload = [{"q": str(q.get("q", "")), "options": [str(o) for o in q.get("options", [])]}
                for q in questions]
-    prompt = ("Переведи тест с русского на казахский (латиница НЕ нужна, кириллица). "
+    prompt = ("Переведи тест с русского на казахский (кириллица). "
+              "Работай в два шага: 1) переведи, 2) ПЕРЕЧИТАЙ свой перевод "
+              "как редактор — исправь согласования, термины и падежи. "
               "Ответь СТРОГО JSON-массивом той же длины: "
               '[{"q": "...", "options": ["...", ...]}]. '
               "Без пояснений, без markdown. Входной JSON:\n"
@@ -87,4 +89,12 @@ def translate_exam_to_kk(questions: list) -> list:
         if not isinstance(opts, list) or len(opts) != len(src["options"]):
             raise RuntimeError("AI вернул не то число вариантов")
         res.append({"q": str(tr.get("q", "")), "options": [str(o) for o in opts]})
+    # Проверка перевода: если длинные тексты вернулись 1-в-1 без единой
+    # казахской буквы — модель эхом вернула исходник, просим повторить.
+    _kk = set("әғқңөұүһіӘҒҚҢӨҰҮҺІ")
+    src_all = " ".join(q["q"] for q in payload).strip()
+    tr_all = " ".join(r["q"] for r in res).strip()
+    if (len(src_all) > 20 and tr_all == src_all
+            and not any(ch in _kk for ch in tr_all)):
+        raise RuntimeError("AI вернул текст без перевода — нажмите кнопку ещё раз")
     return res

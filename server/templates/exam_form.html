@@ -7,10 +7,7 @@
 <input name="subject" placeholder="{{ T.ef_subj_ph }}">
 <label class="dur">{{ T.ef_dur }}<span class="durbox"><input name="duration_min" type="number" value="30" min="1"> {{ T.ef_min }}</span></label></div>
 <div class="formrow">
-  <label class="chip" style="cursor:pointer"><input type="checkbox" id="aiToggle" style="accent-color:#1A1A1A"> {{ T.ef_ai }}</label>
-  <button class="btn p sm" type="button" id="aiBtn" disabled><span class="msr">translate</span> {{ T.ef_ai_btn }}</button>
-</div>
-<div class="formrow">
+  <button class="btn p sm" type="button" id="aiBtn"><span class="msr">translate</span> {{ T.ef_ai_btn }}</button>
   <button class="chip" type="button" id="tabRu" aria-pressed="true">{{ T.ef_tab_ru }}</button>
   <button class="chip" type="button" id="tabKk" aria-pressed="false">{{ T.ef_tab_kk }}</button>
 </div>
@@ -32,13 +29,46 @@ function updNums(){document.querySelectorAll('#qs .qcard').forEach((d,i)=>{
 d.querySelector('.qnum').textContent=ET.q+' '+(i+1);});
 document.querySelectorAll('#qsKk .qcard').forEach((d,i)=>{
 d.querySelector('.qnum').textContent=ET.q+' '+(i+1);});}
+function escA(s){return String(s==null?'':s).replace(/"/g,'&quot;');}
 function addQ(q){q=q||{q:'',options:['','','',''],correct:0};
  const d=document.createElement('div');d.className='qcard';const n=qseq++;
  d.innerHTML=`<div class="qhead"><span class="qnum"></span><button class="btn r sm" type="button" onclick="this.closest('.qcard').remove();updNums();">${ET.delq}</button></div>
- <input class="qt" placeholder="${ET.qph}" value="${(q.q||'').replace(/"/g,'&quot;')}">
+ <input class="qt" placeholder="${ET.qph}" value="${escA(q.q)}">
  <label class="imgpick"><span class="msr">image</span><span class="imgtxt">${ET.img}</span><input type="file" name="qimg_${n}" accept="image/*" hidden onchange="this.closest('.imgpick').querySelector('.imgtxt').textContent=this.files[0]?this.files[0].name:'${ET.img}'"></label>
- <div class="opts">${q.options.map((o,i)=>`<label class="optrow"><input type="radio" name="c${n}" ${i===q.correct?'checked':''} value="${i}" title="*"><input class="qo" placeholder="${ET.opt} ${i+1}" value="${String(o).replace(/"/g,'&quot;')}"></label>`).join('')}</div>`;
+ <div class="opts">${q.options.map((o,i)=>`<label class="optrow"><input type="radio" name="c${n}" ${i===q.correct?'checked':''} value="${i}" title="*"><input class="qo" placeholder="${ET.opt} ${i+1}" value="${escA(o)}"></label>`).join('')}</div>`;
  document.getElementById('qs').appendChild(d);updNums();}
+function kkCard(i,nOpts){const d=document.createElement('div');d.className='qcard';d.dataset.i=i;
+ let opts='';for(let j=0;j<nOpts;j++)opts+=`<label class="optrow"><input class="qko" placeholder="${ET.opt} ${j+1}"></label>`;
+ d.innerHTML=`<div class="qhead"><span class="qnum"></span></div>
+ <input class="qkt" placeholder="${ET.qph}">
+ <div class="opts">${opts}</div>`;
+ return d;}
+function syncKk(){const box=document.getElementById('qsKk');
+ const ru=[...document.querySelectorAll('#qs .qcard')];
+ ru.forEach((d,i)=>{
+  let k=box.querySelector(`.qcard[data-i="${i}"]`);
+  const ov=[...d.querySelectorAll('.qo')].map(x=>x.value);
+  if(!k){k=kkCard(i,ov.length);
+   k.querySelector('.qkt').value=d.querySelector('.qt').value;
+   [...k.querySelectorAll('.qko')].forEach((x,j)=>{x.value=ov[j]||'';});
+   box.appendChild(k);return;}
+  const kt=k.querySelector('.qkt');
+  if(!kt.value.trim())kt.value=d.querySelector('.qt').value;
+  let kos=[...k.querySelectorAll('.qko')];
+  const obox=k.querySelector('.opts');
+  while(kos.length<ov.length){const l=document.createElement('label');l.className='optrow';
+   l.innerHTML=`<input class="qko" placeholder="${ET.opt} ${kos.length+1}">`;
+   obox.appendChild(l);kos=[...k.querySelectorAll('.qko')];}
+  kos.forEach((x,j)=>{if(!x.value.trim())x.value=ov[j]||'';});});
+ [...box.querySelectorAll('.qcard')].forEach(k=>{if(+k.dataset.i>=ru.length)k.remove();});
+ updNums();}
+function buildKk(list){syncKk();const box=document.getElementById('qsKk');
+ list.forEach((q,i)=>{
+  const k=box.querySelector(`.qcard[data-i="${i}"]`);if(!k)return;
+  if((q.q||'').trim())k.querySelector('.qkt').value=q.q;
+  const kos=[...k.querySelectorAll('.qko')];
+  (q.options||[]).forEach((o,j)=>{if(kos[j]&&(o||'').trim())kos[j].value=o;});});
+ updNums();showTab('kk');}
 function collectRu(){const out=[];let bad='';
  document.querySelectorAll('#qs .qcard').forEach((d,ord)=>{
   d.querySelector('input[type=file]').name='qimg_'+ord;
@@ -48,44 +78,31 @@ function collectRu(){const out=[];let bad='';
   else if(opts.length<2)bad=ET.need_opt;
   else out.push({q:d.querySelector('.qt').value,options:[...d.querySelectorAll('.qo')].map(i=>i.value)});});
  return {out,bad};}
-function buildKk(list){const box=document.getElementById('qsKk');box.innerHTML='';
- list.forEach((q,i)=>{
-  const d=document.createElement('div');d.className='qcard';d.dataset.i=i;
-  d.innerHTML=`<div class="qhead"><span class="qnum"></span></div>
-  <input class="qkt" placeholder="${ET.qph}" value="${String(q.q||'').replace(/"/g,'&quot;')}">
-  <div class="opts">${q.options.map((o,j)=>`<label class="optrow"><input class="qko" placeholder="${ET.opt} ${j+1}" value="${String(o).replace(/"/g,'&quot;')}"></label>`).join('')}</div>`;
-  box.appendChild(d);});
- updNums();showTab('kk');}
-function collectKk(n){const res=[];
- for(let i=0;i<n;i++){
-  const d=document.querySelector(`#qsKk .qcard[data-i="${i}"]`);
-  if(!d){res.push({});continue;}
-  res.push({q:d.querySelector('.qkt').value,options:[...d.querySelectorAll('.qko')].map(x=>x.value)});}
- return res;}
 function pack(){const {out,bad}=collectRu();
  if(bad){bqAlert(bad);return false;}
  if(!out.length){bqAlert(ET.need_one);return false;}
- const kk=collectKk(out.length);
+ syncKk();
  const full=out.map((q,i)=>{
-  const k=kk[i]||{};const o={...q};
-  if((k.q||'').trim())o.q_kk=k.q;
-  const ko=(k.options||[]).map(x=>x||'');
-  if(ko.length===q.options.length&&ko.some(x=>x.trim()))o.options_kk=ko;
+  const k=document.querySelector(`#qsKk .qcard[data-i="${i}"]`);
+  const o={...q};
+  const kq=k?k.querySelector('.qkt').value:'';
+  o.q_kk=(kq||'').trim()||q.q;
+  let ko=k?[...k.querySelectorAll('.qko')].map(x=>x.value):[];
+  if(ko.length!==q.options.length||!ko.some(x=>(x||'').trim()))ko=[...q.options];
+  o.options_kk=ko;
   const c=document.querySelectorAll('#qs .qcard')[i].querySelector('input[type=radio]:checked');
   o.correct=c?+c.value:0;
   return o;});
  document.getElementById('qj').value=JSON.stringify(full);return true;}
-function showTab(w){const ru=w==='ru';
+function showTab(w){if(w==='kk')syncKk();const ru=w==='ru';
  document.getElementById('qs').hidden=!ru;document.getElementById('qsKk').hidden=ru;
  document.getElementById('kkHint').hidden=ru;
  document.getElementById('tabRu').setAttribute('aria-pressed',ru);
  document.getElementById('tabKk').setAttribute('aria-pressed',!ru);}
 document.getElementById('tabRu').onclick=()=>showTab('ru');
 document.getElementById('tabKk').onclick=()=>showTab('kk');
-const aiT=document.getElementById('aiToggle'),aiB=document.getElementById('aiBtn');
-aiT.onchange=()=>{aiB.disabled=!aiT.checked;};
+const aiB=document.getElementById('aiBtn');
 aiB.onclick=async()=>{
- if(!aiT.checked)return;
  const {out,bad}=collectRu();
  if(bad){bqAlert(bad);return;}
  if(!out.length){bqAlert(ET.need_one);return;}
@@ -97,6 +114,6 @@ aiB.onclick=async()=>{
   if(!r.ok)throw new Error(j.error||ET.ai_fail);
   buildKk(j.questions);
  }catch(e){bqAlert(ET.ai_fail+': '+(e.message||e));}
- aiB.innerHTML=old;aiB.disabled=!aiT.checked;};
+ aiB.innerHTML=old;aiB.disabled=false;};
 addQ();
 </script>{% endblock %}
