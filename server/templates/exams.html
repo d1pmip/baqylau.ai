@@ -1,10 +1,10 @@
-{% extends "base.html" %}{% block t %}Экзамены{% endblock %}{% block b %}
-<div class="pagehead"><div><small>БАНК ТЕСТОВ</small><h2>Экзамены</h2></div><div class="sp"></div>
-<a class="btn g" href="/exams/new">+ Новый экзамен</a></div>
+{% extends "base.html" %}{% block t %}{{ T.e_title }}{% endblock %}{% block b %}
+<div class="pagehead"><div><small>{{ T.e_bank }}</small><h2>{{ T.e_title }}</h2></div><div class="sp"></div>
+<a class="btn g" href="/exams/new">{{ T.e_new }}</a></div>
 <div class="card block">
-<div class="tblwrap"><table><tr><th>Название</th><th>Предмет</th><th>Мин</th><th>Вопросов</th><th></th></tr>
+<div class="tblwrap"><table><tr><th>{{ T.th_title }}</th><th>{{ T.th_subj }}</th><th>{{ T.th_min }}</th><th>{{ T.th_q }}</th><th></th></tr>
 {% for e in exams %}<tr><td><b>{{ e.row.title }}</b></td><td>{{ e.row.subject }}</td>
 <td>{{ e.row.duration_min }}</td><td>{{ e.n }}</td>
-<td><form method="post" action="/exams/{{ e.row.id }}/delete"><button class="btn r sm" type="submit" title="Удалить экзамен"><span class="msr">close</span></button></form></td></tr>
-{% else %}<tr><td colspan="5"><div class="empty">Создайте первый экзамен</div></td></tr>{% endfor %}</table></div></div>
+<td><form method="post" action="/exams/{{ e.row.id }}/delete" data-confirm="{{ T.u_del_q }}?"><button class="btn r sm" type="submit" title="{{ T.u_del_q }}"><span class="msr">close</span></button></form></td></tr>
+{% else %}<tr><td colspan="5"><div class="empty">{{ T.e_empty }}</div></td></tr>{% endfor %}</table></div></div>
 {% endblock %}

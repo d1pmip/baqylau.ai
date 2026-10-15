@@ -240,6 +240,20 @@ def create_app(db_path: str = DB) -> Flask:
     app.secret_key = os.environ.get("BAQYLAU_SECRET", "baqylau-local")
     app.config["DB"] = db_path
 
+    from . import i18n as _i18n
+
+    @app.context_processor
+    def _inject_lang():
+        lang = _i18n.get_lang()
+        return {"T": _i18n.t(lang), "lang": lang, "LANGS": _i18n.LANGS}
+
+    @app.route("/lang/<code>")
+    def set_lang(code):
+        if code in _i18n.LANGS:
+            session["lang"] = code
+        nxt = request.args.get("next") or request.referrer or url_for("dashboard")
+        return redirect(nxt)
+
     def con():
         return d.connect(app.config["DB"])
 
@@ -302,7 +316,7 @@ def create_app(db_path: str = DB) -> Flask:
                 session["user"] = {"id": u["id"], "username": u["username"],
                                    "role": u["role"], "name": u["full_name"]}
                 return redirect(url_for("dashboard"))
-            return render_template("login.html", error="Неверный логин/пароль")
+            return render_template("login.html", error=_i18n.t(_i18n.get_lang())["login_err"])
         return render_template("login.html", error="")
 
     @app.route("/logout")
@@ -329,9 +343,41 @@ def create_app(db_path: str = DB) -> Flask:
             unseen = c.execute("SELECT COUNT(*) n FROM notifications WHERE seen=0").fetchone()["n"]
         finally:
             c.close()
+        try:
+            from . import update as _upd
+            upd = _upd.check()
+        except Exception:
+            upd = {"local": "", "latest": None, "update": False, "url": None}
         return render_template("dashboard.html", user=me(), exams=exams, groups=groups,
-                               sessions=sess, unseen=unseen,
+                               sessions=sess, unseen=unseen, upd=upd,
                                error=request.args.get("error", ""), ok=request.args.get("ok", ""))
+
+    @app.route("/api/update")
+    @login_required("teacher", "admin")
+    def api_update():
+        try:
+            from . import update as _upd
+            return jsonify(_upd.check(force=request.args.get("refresh") == "1"))
+        except Exception as exc:
+            logger.warning("update check failed: %s", exc)
+            return jsonify({"update": False, "latest": None})
+
+    @app.route("/api/translate_kk", methods=["POST"])
+    @login_required("teacher", "admin")
+    def api_translate_kk():
+        """AI-перевод вопросов экзамена RU->KK (Groq). Тумблер в конструкторе."""
+        from . import ai_translate as _ai
+        if not _ai.key_configured():
+            return jsonify({"error": "GROQ_API_KEY не задан на сервере"}), 503
+        data = request.get_json(force=True, silent=True) or {}
+        try:
+            out = _ai.translate_exam_to_kk(data.get("questions", []))
+            return jsonify({"questions": out})
+        except RuntimeError as e:
+            return jsonify({"error": str(e)}), 502
+        except Exception:
+            logger.exception("translate failed")
+            return jsonify({"error": "Перевод не удался"}), 502
 
     @app.route("/api/teacher/state")
     def teacher_state():
@@ -960,11 +1006,20 @@ def create_app(db_path: str = DB) -> Flask:
                 return jsonify({"error": "no active exam"}), 404
             e = c.execute("SELECT * FROM exams WHERE id=?", (s["exam_id"],)).fetchone()
             qs = d.jload(e["questions_json"], [])
-            public = [{"q": q.get("q", ""), "options": q.get("options", []),
-                       "image": ("/uploads/" + q["image"]) if q.get("image") else None}
-                      for q in qs]
+            want_kk = (request.args.get("lang", "") or "").lower() in ("kk", "kz", "kaz")
+            pub = []
+            for q in qs:
+                opts = q.get("options", [])
+                text = q.get("q", "")
+                if want_kk:
+                    text = q.get("q_kk") or text
+                    opts_kk = q.get("options_kk") or []
+                    opts = opts_kk if len(opts_kk) == len(opts) else opts
+                pub.append({"q": text, "options": opts,
+                            "image": ("/uploads/" + q["image"]) if q.get("image") else None,
+                            "has_kk": bool(q.get("q_kk"))})
             return jsonify({"exam_id": e["id"], "title": e["title"],
-                            "duration_min": e["duration_min"], "questions": public})
+                            "duration_min": e["duration_min"], "questions": pub})
         finally:
             c.close()
 

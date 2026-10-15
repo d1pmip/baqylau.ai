@@ -25,6 +25,9 @@ from PySide6.QtWidgets import (QApplication, QFrame, QGraphicsOpacityEffect,
                                QListWidgetItem, QMainWindow, QProgressBar,
                                QPushButton, QSizePolicy, QVBoxLayout, QWidget)
 
+from .lang import app_lang as _app_lang, set_app_lang as _set_app_lang
+from .lang import tr as _tr_str
+
 logger = logging.getLogger(__name__)
 
 LEVEL_COLORS = {
@@ -267,6 +270,9 @@ class BentoWindow(QMainWindow):
         self._hover_anims: dict = {}
         self._hover_base_pos: dict = {}
         self._press_anims: list = []
+        # язык интерфейса + язык варианта экзамена (RU/KK)
+        self._app_lang = _app_lang()
+        self._exam_lang = self._app_lang
         self._build_ui(student)
         self._build_workers()
         if standalone:
@@ -275,7 +281,7 @@ class BentoWindow(QMainWindow):
             self._sess_timer = QTimer(self)
             self._sess_timer.timeout.connect(self._poll_session)
             self._sess_timer.start(5000)
-            self.badge.setText("Ожидание экзамена…")
+            self.badge.setText(self._t("badge_wait"))
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick_clock)
         self._timer.start(1000)
@@ -317,11 +323,12 @@ class BentoWindow(QMainWindow):
         avatar.setAlignment(Qt.AlignCenter)
         title_box = QVBoxLayout()
         title_box.addWidget(self._mk("AppTitle", student))
-        title_box.addWidget(self._mk("AppSub", "Baqylau  •  YOLO + MediaPipe + защита окружения"))
+        self.app_sub_lbl = self._mk("AppSub", self._t("app_sub"))
+        title_box.addWidget(self.app_sub_lbl)
         hl.addWidget(avatar)
         hl.addLayout(title_box)
         hl.addStretch(1)
-        self.badge = QLabel("● Экзамен активен")
+        self.badge = QLabel(self._t("badge_active"))
         self.badge.setObjectName("Badge")
         hl.addWidget(self.badge)
         self.clock = QLabel("00:00")
@@ -337,6 +344,23 @@ class BentoWindow(QMainWindow):
         hl.addWidget(self.eeg_dot)
         hl.addWidget(self.cam_dot)
         hl.addWidget(self.sec_dot)
+        # Тумблер языка интерфейса + варианта экзамена: RU / KZ.
+        from PySide6.QtWidgets import QButtonGroup as _QBG
+        self.btn_lang_ru = QPushButton("RU")
+        self.btn_lang_kk = QPushButton("KZ")
+        self._lang_group = _QBG(self)
+        for _lb in (self.btn_lang_ru, self.btn_lang_kk):
+            _lb.setCheckable(True)
+            _lb.setFixedSize(46, 28)
+            _lb.setCursor(Qt.PointingHandCursor)
+            self._lang_group.addButton(_lb)
+            hl.addWidget(_lb)
+        self.btn_lang_ru.clicked.connect(lambda: self._switch_app_lang("ru"))
+        self.btn_lang_kk.clicked.connect(lambda: self._switch_app_lang("kk"))
+        try:
+            self._sync_lang_buttons()
+        except Exception:
+            pass
         lay.addWidget(header)
 
         # Grid
@@ -419,7 +443,8 @@ class BentoWindow(QMainWindow):
 
         # Exam card: режим одного вопроса на весь экран (без общего скролла).
         self.exam_card = self._card("ExamCard")
-        self.exam_card.layout().addWidget(self._mk("CardTitle", "Экзамен"))
+        self.exam_card_title = self._mk("CardTitle", self._t("exam_card"))
+        self.exam_card.layout().addWidget(self.exam_card_title)
         self.exam_title = QLabel("—")
         self.exam_card.layout().addWidget(self.exam_title)
         self.exam_timer = QLabel("")
@@ -446,9 +471,9 @@ class BentoWindow(QMainWindow):
         # вместе с карточкой экзамена (в т.ч. в exam-only режиме ученика).
         self.exam_nav_card = self._card("ExamNavCard")
         # Навигация: компактные кнопки (не на всю ширину), стиль из палитры.
-        self.btn_prev = QPushButton("← Назад")
+        self.btn_prev = QPushButton(self._t("nav_back"))
         self.btn_prev.setObjectName("BtnPause")
-        self.btn_next = QPushButton("Вперед →")
+        self.btn_next = QPushButton(self._t("nav_fwd"))
         self.btn_next.setObjectName("BtnSnap")
         for _nb in (self.btn_prev, self.btn_next):
             _nb.setFixedHeight(40)
@@ -476,7 +501,7 @@ class BentoWindow(QMainWindow):
         _dots_wrap.layout().setAlignment(Qt.AlignCenter)
         self._exam_dots_wrap = _dots_wrap
         self.exam_nav_card.layout().addWidget(_dots_wrap)
-        self.btn_submit = QPushButton("✔  Отправить ответы")
+        self.btn_submit = QPushButton(self._t("nav_submit"))
         self.btn_submit.setObjectName("BtnSnap")
         self.btn_submit.clicked.connect(self._submit_exam)
         # Веб .btn.big центрируется; в десктопе — компактная кнопка по центру.
@@ -511,11 +536,11 @@ class BentoWindow(QMainWindow):
         cl = QHBoxLayout(ctrl)
         cl.setSpacing(8)
         cl.setContentsMargins(14, 10, 14, 10)
-        self.btn_snap = QPushButton("Сделать снимок")
+        self.btn_snap = QPushButton(self._t("btn_snap"))
         self.btn_snap.setObjectName("BtnSnap")
-        self.btn_pause = QPushButton("Пауза")
+        self.btn_pause = QPushButton(self._t("btn_pause"))
         self.btn_pause.setObjectName("BtnPause")
-        self.btn_quit = QPushButton("■  Завершить")
+        self.btn_quit = QPushButton(self._t("btn_quit"))
         self.btn_quit.setObjectName("BtnQuit")
         self.btn_snap.clicked.connect(self._snapshot)
         self.btn_pause.clicked.connect(self._toggle_pause)
@@ -550,6 +575,106 @@ class BentoWindow(QMainWindow):
                 w.setVisible(False)
             except Exception:
                 pass
+
+    def _t(self, key: str):
+        return _tr_str(self._app_lang, key)
+
+    def _switch_app_lang(self, code: str) -> None:
+        """Тумблер RU/KZ: интерфейс + перезагрузка варианта экзамена с ответами."""
+        try:
+            if code not in ("ru", "kk") or code == self._app_lang:
+                try:
+                    self._sync_lang_buttons()
+                except Exception:
+                    pass
+                return
+            saved = {}
+            try:
+                for i, grp in enumerate(getattr(self, "_exam_groups", []) or []):
+                    saved[i] = grp.checkedId()
+            except Exception:
+                saved = {}
+            self._app_lang = code
+            _set_app_lang(code)
+            self._apply_app_lang()
+            try:
+                if (self.client is not None and not self.standalone
+                        and self.exam_card.isVisible() and self._session_active):
+                    self._load_exam(code)
+                    for i, cid in saved.items():
+                        try:
+                            if 0 <= i < len(self._exam_groups) and cid is not None and cid >= 0:
+                                btn = self._exam_groups[i].button(cid)
+                                if btn is not None:
+                                    btn.setChecked(True)
+                        except Exception:
+                            continue
+                    try:
+                        self._paint_opts(self._exam_groups[self._exam_current])
+                    except Exception:
+                        pass
+                    for i in range(len(self._exam_groups)):
+                        self._refresh_q_badge(i)
+            except Exception:
+                pass
+            try:
+                self._sync_lang_buttons()
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _sync_lang_buttons(self) -> None:
+        try:
+            self.btn_lang_ru.setChecked(self._app_lang == "ru")
+            self.btn_lang_kk.setChecked(self._app_lang == "kk")
+        except Exception:
+            pass
+
+    def _apply_app_lang(self) -> None:
+        """Перевести весь хром интерфейса без перезапуска."""
+        try:
+            self.app_sub_lbl.setText(self._t("app_sub"))
+        except Exception:
+            pass
+        try:
+            self.exam_card_title.setText(self._t("exam_card"))
+        except Exception:
+            pass
+        try:
+            self.btn_prev.setText(self._t("nav_back"))
+            self.btn_next.setText(self._t("nav_end") if self._at_last_exam() else self._t("nav_fwd"))
+            self.btn_submit.setText(self._t("nav_submit"))
+            self.btn_snap.setText(self._t("btn_snap"))
+            self.btn_pause.setText(self._t("btn_pause"))
+            self.btn_quit.setText(self._t("btn_quit"))
+        except Exception:
+            pass
+        try:
+            if self._session_active:
+                self.badge.setText(self._t("badge_going"))
+            else:
+                self.badge.setText(self._t("badge_wait"))
+        except Exception:
+            pass
+        try:
+            self._tick_clock()
+        except Exception:
+            pass
+        try:
+            n = len(getattr(self, "_exam_pages", []) or [])
+            if n:
+                self.exam_progress.setText(
+                    f"{self._t('q_of')} {int(self._exam_current) + 1} / {n}")
+        except Exception:
+            pass
+
+    def _at_last_exam(self) -> bool:
+        try:
+            n = len(getattr(self, "_exam_pages", []) or [])
+            return n > 0 and int(self._exam_current) >= n - 1
+        except Exception:
+            return False
 
     def _mk(self, obj: str, text: str) -> QLabel:
         lbl = QLabel(text)
@@ -664,7 +789,7 @@ class BentoWindow(QMainWindow):
                             f"Готово: yaw[{pg.yaw_left:.0f},{pg.yaw_right:.0f}] "
                             f"pitch[{pg.pitch_down:.0f},{pg.pitch_up:.0f}] "
                             f"gaze>{pg.gaze_thresh:.0f}")
-            self.badge.setText("● Экзамен активен")
+            self.badge.setText(self._t("badge_active"))
         det = vstate.detector
         self.vision_line.setText(
             f"pose: {vstate.pose.direction} yaw {vstate.pose.yaw:+.0f}° pitch {vstate.pose.pitch:+.0f}°  "
@@ -828,7 +953,7 @@ class BentoWindow(QMainWindow):
                 self._session_id = sid
                 self._session_active = True
                 self._start_capture()
-                self.badge.setText("● Экзамен идёт")
+                self.badge.setText(self._t("badge_going"))
                 self._push_feed("LOW", "session", f"Экзамен запущен: {s.get('title', '')}")
                 self._load_exam()
             elif self._session_active and self._session_id is not None and status != "active":
@@ -840,14 +965,16 @@ class BentoWindow(QMainWindow):
                 except Exception:
                     pass
                 self._exam_deadline = 0.0
-                self.badge.setText("■ Экзамен завершён")
+                self.badge.setText(self._t("badge_done"))
                 self._push_feed("LOW", "session", "Экзамен завершён преподавателем")
         except Exception as exc:
             logger.debug("session poll failed: %s", exc)
 
-    def _load_exam(self) -> None:
+    def _load_exam(self, lang: str | None = None) -> None:
         try:
-            ex = self.client.exam()
+            lang = lang or getattr(self, "_exam_lang", "ru")
+            self._exam_lang = lang
+            ex = self.client.exam(lang)
             qs = ex.get("questions", [])
             self.exam_title.setText(ex.get("title", "Экзамен"))
             # clear old pages/dots
@@ -946,7 +1073,7 @@ class BentoWindow(QMainWindow):
                     _brow = QHBoxLayout()
                     _brow.setContentsMargins(0, 0, 0, 0)
                     _brow.addStretch(1)
-                    badge = QLabel(f"Вопрос {qi + 1}")
+                    badge = QLabel(f"{self._t('q_badge')} {qi + 1}")
                     badge.setObjectName("MediaBadge")
                     badge.setProperty("done", False)
                     _brow.addWidget(badge)
@@ -984,7 +1111,7 @@ class BentoWindow(QMainWindow):
                 dot.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
                 dot.setProperty("active", False)
                 dot.setCursor(Qt.PointingHandCursor)
-                dot.setToolTip(f"Вопрос {qi + 1}")
+                dot.setToolTip(f"{self._t('q_badge')} {qi + 1}")
                 dot.clicked.connect(lambda _c, _i=qi: self._show_exam_index(_i))
                 try:
                     dot.installEventFilter(self)
@@ -1011,11 +1138,11 @@ class BentoWindow(QMainWindow):
             idx = max(0, min(int(idx), n - 1))
             prev = int(self._exam_current)
             if idx == prev and self.exam_stack.currentIndex() == idx:
-                self.exam_progress.setText(f"Вопрос {idx + 1} / {n}")
+                self.exam_progress.setText(f"{self._t('q_of')} {idx + 1} / {n}")
                 self._refresh_exam_dots(idx, animate=False)
                 try:
                     self.btn_prev.setEnabled(idx > 0)
-                    self.btn_next.setText("Вперед →" if idx < n - 1 else "К концу →")
+                    self.btn_next.setText(self._t("nav_fwd") if idx < n - 1 else self._t("nav_end"))
                 except Exception:
                     pass
                 self._fit_current_image()
@@ -1032,12 +1159,12 @@ class BentoWindow(QMainWindow):
                     pass
                 self._stop_exam_anims()
                 self.exam_stack.setCurrentIndex(idx)
-            self.exam_progress.setText(f"Вопрос {idx + 1} / {n}")
+            self.exam_progress.setText(f"{self._t('q_of')} {idx + 1} / {n}")
             self._refresh_exam_dots(idx, animate=animate, prev=prev)
             self._animate_dots_from_bottom()
             try:
                 self.btn_prev.setEnabled(idx > 0)
-                self.btn_next.setText("Вперед →" if idx < n - 1 else "К концу →")
+                self.btn_next.setText(self._t("nav_fwd") if idx < n - 1 else self._t("nav_end"))
             except Exception:
                 pass
             self._fit_current_image()
@@ -1055,7 +1182,7 @@ class BentoWindow(QMainWindow):
                     dot.setProperty("active", is_active)
                     dot.style().unpolish(dot)
                     dot.style().polish(dot)
-                    dot.setToolTip(f"Вопрос {di + 1}" + (" (текущий)" if is_active else ""))
+                    dot.setToolTip(f"{self._t('q_badge')} {di + 1}" + (self._t("tip_cur") if is_active else ""))
                 except Exception:
                     pass
             if animate and prev != idx:
@@ -1608,7 +1735,7 @@ class BentoWindow(QMainWindow):
                     answered = self._exam_groups[qi].checkedId() != -1
             except Exception:
                 pass
-            badge.setText("Отвечен" if answered else f"Вопрос {qi + 1}")
+            badge.setText(self._t("answered") if answered else f"{self._t('q_badge')} {qi + 1}")
             badge.setProperty("done", bool(answered))
             badge.style().unpolish(badge)
             badge.style().polish(badge)
@@ -1624,7 +1751,7 @@ class BentoWindow(QMainWindow):
                 ans.append(grp.checkedId())
             r = self.client.submit(ans)
             self._exam_deadline = 0.0
-            self.exam_timer.setText(f"Результат: {r.get('score', '?')}/{r.get('total', '?')}")
+            self.exam_timer.setText(f"{self._t('result')}: {r.get('score', '?')}/{r.get('total', '?')}")
             self.btn_submit.setEnabled(False)
             self._push_feed("LOW", "exam", f"Ответы отправлены: {r.get('score')}/{r.get('total')}")
         except Exception as exc:
@@ -1753,10 +1880,10 @@ class BentoWindow(QMainWindow):
             if self._exam_deadline and self._session_active:
                 left = int(self._exam_deadline - time.time())
                 if left <= 0:
-                    self.exam_timer.setText("Время вышло — отправляю…")
+                    self.exam_timer.setText(self._t("time_up"))
                     self._submit_exam()
                 else:
-                    self.exam_timer.setText(f"Осталось: {left // 60:02d}:{left % 60:02d}")
+                    self.exam_timer.setText(f"{self._t('left')}: {left // 60:02d}:{left % 60:02d}")
         except Exception:
             pass
 

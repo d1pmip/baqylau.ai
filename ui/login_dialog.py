@@ -12,6 +12,9 @@ from PySide6.QtCore import QSettings, Qt
 from PySide6.QtWidgets import (QDialog, QHBoxLayout, QLabel, QLineEdit,
                                QPushButton, QVBoxLayout, QWidget, QFrame)
 
+from .lang import app_lang, set_app_lang
+from .lang import tr as _tr_str
+
 logger = logging.getLogger(__name__)
 
 ORG, APP = "Baqylau", "Student"
@@ -60,6 +63,7 @@ class LoginDialog(QDialog):
     def __init__(self, parent: QWidget | None = None, server: str = "",
                  username: str = "") -> None:
         super().__init__(parent)
+        self._lang = app_lang()
         self.setObjectName("LoginDialog")
         self.setWindowTitle("Baqylau — вход ученика")
         self.setMinimumWidth(400)
@@ -72,6 +76,19 @@ class LoginDialog(QDialog):
         lay = QVBoxLayout(self)
         lay.setSpacing(10)
         lay.setContentsMargins(26, 24, 26, 24)
+
+        langrow = QHBoxLayout()
+        langrow.addStretch(1)
+        self.btn_ru = QPushButton("RU")
+        self.btn_kz = QPushButton("KZ")
+        for _b in (self.btn_ru, self.btn_kz):
+            _b.setCheckable(True)
+            _b.setFixedSize(46, 28)
+            _b.setCursor(Qt.PointingHandCursor)
+            langrow.addWidget(_b)
+        lay.addLayout(langrow)
+        self.btn_ru.clicked.connect(lambda: self._set_lang("ru"))
+        self.btn_kz.clicked.connect(lambda: self._set_lang("kk"))
 
         hero = QFrame()
         hero.setObjectName("LoginHero")
@@ -94,39 +111,44 @@ class LoginDialog(QDialog):
         hbox = QVBoxLayout()
         ht = QLabel("Baqylau")
         ht.setObjectName("HeroTitle")
-        hs = QLabel("Локальный AI-прокторинг  •  Qostanai")
-        hs.setObjectName("HeroSub")
+        self.hero_sub = QLabel("")
+        self.hero_sub.setObjectName("HeroSub")
         hbox.addWidget(ht)
-        hbox.addWidget(hs)
+        hbox.addWidget(self.hero_sub)
         hl.addLayout(hbox, 1)
         lay.addWidget(hero)
 
-        title = QLabel("Вход ученика")
-        title.setObjectName("LoginTitle")
-        lay.addWidget(title)
-        sub = QLabel("Камера включится только после старта экзамена преподавателем.")
-        sub.setObjectName("LoginSub")
-        sub.setWordWrap(True)
-        lay.addWidget(sub)
+        self.login_title = QLabel("")
+        self.login_title.setObjectName("LoginTitle")
+        lay.addWidget(self.login_title)
+        self.login_sub = QLabel("")
+        self.login_sub.setObjectName("LoginSub")
+        self.login_sub.setWordWrap(True)
+        lay.addWidget(self.login_sub)
 
         chips = QHBoxLayout()
         chips.setSpacing(8)
-        for text in ("Взгляд", "Смартфон", "Защита"):
-            ch = QLabel(text)
+        self.chip_lbls = []
+        for _ in range(3):
+            ch = QLabel("")
             ch.setObjectName("Chip")
             chips.addWidget(ch)
+            self.chip_lbls.append(ch)
         chips.addStretch(1)
         lay.addLayout(chips)
 
-        lay.addWidget(self._flabel("Сервер панели:"))
+        self.fl_server = self._flabel("")
+        lay.addWidget(self.fl_server)
         self.ed_server = QLineEdit(server or str(last))
         self.ed_server.setPlaceholderText("http://192.168.1.10:5050")
         lay.addWidget(self.ed_server)
-        lay.addWidget(self._flabel("Логин ученика:"))
+        self.fl_login = self._flabel("")
+        lay.addWidget(self.fl_login)
         self.ed_login = QLineEdit(username)
         self.ed_login.setPlaceholderText("напр. ivan_petrov")
         lay.addWidget(self.ed_login)
-        lay.addWidget(self._flabel("Пароль:"))
+        self.fl_pass = self._flabel("")
+        lay.addWidget(self.fl_pass)
         self.ed_pass = QLineEdit()
         self.ed_pass.setEchoMode(QLineEdit.EchoMode.Password)
         self.ed_pass.setPlaceholderText("••••••••")
@@ -138,17 +160,18 @@ class LoginDialog(QDialog):
         self.error.setWordWrap(True)
         lay.addWidget(self.error)
 
-        self.btn_login = QPushButton("Войти  →")
+        self.btn_login = QPushButton("")
         self.btn_login.setObjectName("LoginGo")
         self.btn_login.setCursor(Qt.PointingHandCursor)
         self.btn_login.clicked.connect(self._on_login)
         lay.addWidget(self.btn_login)
 
-        self.btn_local = QPushButton("продолжить в локальном режиме (без сервера)")
+        self.btn_local = QPushButton("")
         self.btn_local.setObjectName("LoginLocal")
         self.btn_local.setCursor(Qt.PointingHandCursor)
         self.btn_local.clicked.connect(self._on_local)
         lay.addWidget(self.btn_local, alignment=Qt.AlignCenter)
+        self._apply_lang()
 
     @staticmethod
     def _flabel(text: str) -> QLabel:
@@ -156,18 +179,47 @@ class LoginDialog(QDialog):
         lbl.setObjectName("FieldLabel")
         return lbl
 
+    def _t(self, key: str):
+        return _tr_str(self._lang, key)
+
+    def _set_lang(self, code: str) -> None:
+        if code not in ("ru", "kk"):
+            return
+        self._lang = code
+        set_app_lang(code)
+        self._apply_lang()
+
+    def _apply_lang(self) -> None:
+        try:
+            t = self._t
+            self.hero_sub.setText(t("hero_sub"))
+            self.login_title.setText(t("login_title"))
+            self.login_sub.setText(t("login_sub"))
+            for lbl, txt in zip(self.chip_lbls, t("login_chips")):
+                lbl.setText(txt)
+            self.fl_server.setText(t("f_server"))
+            self.fl_login.setText(t("f_login"))
+            self.fl_pass.setText(t("f_pass"))
+            self.ed_login.setPlaceholderText(t("login_ph"))
+            self.btn_login.setText(t("btn_go"))
+            self.btn_local.setText(t("btn_local"))
+            self.btn_ru.setChecked(self._lang == "ru")
+            self.btn_kz.setChecked(self._lang == "kk")
+        except Exception:
+            pass
+
     def _on_login(self) -> None:
         server = self.ed_server.text().strip()
         username = self.ed_login.text().strip()
         password = self.ed_pass.text()
         if not server or not username:
-            self.error.setText("Укажите сервер и логин")
+            self.error.setText(self._t("err_need"))
             return
-        self.error.setText("Подключение…")
+        self.error.setText(self._t("err_conn"))
         self.error.repaint()
         c = try_login(server, username, password)
         if c is None:
-            self.error.setText("Не удалось войти: проверьте сервер, логин и пароль")
+            self.error.setText(self._t("err_fail"))
             return
         QSettings(ORG, APP).setValue("server", server)
         self.client = c

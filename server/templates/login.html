@@ -1,51 +1,50 @@
-{% extends "base.html" %}{% block t %}Вход{% endblock %}{% block b %}
+{% extends "base.html" %}{% block t %}{{ T.login }}{% endblock %}{% block b %}
 <div class="auth-top" style="display:flex;align-items:center;justify-content:space-between;gap:20px;margin:14px 0 40px">
   <a class="brandline" href="/login" aria-label="Baqylau.ai">
     <span class="mark"><img src="/static/brand.svg" alt="" style="width:40px;height:40px"></span>
     <span class="num">01</span>
-    <small><strong>BAQYLAU.AI</strong> · QOSTANAI · ЛОКАЛЬНЫЙ ПРОКТОРИНГ</small>
+    <small><strong>BAQYLAU.AI</strong> · QOSTANAI · {{ T.login_brand }}</small>
   </a>
-  <div class="top-note"><span class="status-dot"></span>Локальный режим • данные не уходят в облако</div>
+  <div class="top-note"><span class="status-dot"></span>{{ T.login_top }}</div>
 </div>
 <section class="auth-hero">
   <div>
     <div class="eyebrow"><b>01</b> BAQYLAU.AI · QOSTANAI · ПРОКТОРИНГ</div>
-    <h1>Честный экзамен.<br><span class="accent">Всё локально.</span></h1>
-    <p class="lead">Камера, взгляд и смартфон — под контролем. Панель преподавателя простая:
-    вся тяжёлая работа выполняется локально, без лишних облачных сервисов.</p>
+    <h1>{{ T.login_h1a }}<br><span class="accent">{{ T.login_h1b }}</span></h1>
+    <p class="lead">{{ T.login_lead }}</p>
     <div class="features reveal">
       <article class="feature" style="background:linear-gradient(145deg,rgba(212,245,165,.56),rgba(255,255,255,.30))">
-        <div class="icon"><span class="msr">smartphone</span></div><strong>Смартфон</strong><span>YOLO</span>
+        <div class="icon"><span class="msr">smartphone</span></div><strong>{{ T.login_f1 }}</strong><span>YOLO</span>
       </article>
       <article class="feature" style="background:linear-gradient(145deg,rgba(216,212,255,.54),rgba(255,255,255,.30))">
-        <div class="icon"><span class="msr">visibility</span></div><strong>Взгляд<br>и голова</strong><span>анализ поведения</span>
+        <div class="icon"><span class="msr">visibility</span></div><strong>{{ T.login_f2|safe }}</strong><span>{{ T.login_f2s }}</span>
       </article>
       <article class="feature" style="background:linear-gradient(145deg,rgba(255,212,236,.54),rgba(255,255,255,.30))">
-        <div class="icon"><span class="msr">security</span></div><strong>Защита<br>окружения</strong><span>контроль рабочего места</span>
+        <div class="icon"><span class="msr">security</span></div><strong>{{ T.login_f3|safe }}</strong><span>{{ T.login_f3s }}</span>
       </article>
     </div>
     <div class="meta reveal">
-      <div class="meta-item"><small>Облака</small><b>0 — всё дома</b></div>
-      <div class="meta-item"><small>Стек</small><b>CV + Security</b></div>
-      <div class="meta-item"><small>Режим</small><b>LAN / офлайн</b></div>
+      <div class="meta-item"><small>{{ T.login_m1 }}</small><b>{{ T.login_m1v }}</b></div>
+      <div class="meta-item"><small>{{ T.login_m2 }}</small><b>CV + Security</b></div>
+      <div class="meta-item"><small>{{ T.login_m3 }}</small><b>{{ T.login_m3v }}</b></div>
     </div>
   </div>
   <div>
     <section class="auth-card" aria-labelledby="login-title">
-      <h2 id="login-title">Вход в систему</h2>
-      <p class="sub" style="margin:0 0 20px;color:var(--mut);font-size:14px">Для преподавателя или администратора. Авторизация внутри локальной сети.</p>
+      <h2 id="login-title">{{ T.login_card }}</h2>
+      <p class="sub" style="margin:0 0 20px;color:var(--mut);font-size:14px">{{ T.login_sub }}</p>
       {% if error %}<p class="err">{{ error }}</p>{% endif %}
       <form method="post">
-        <label class="fl" for="username">Логин</label>
-        <input id="username" name="username" type="text" autocomplete="username" placeholder="Введите логин" required>
-        <label class="fl" for="password">Пароль</label>
+        <label class="fl" for="username">{{ T.login_user }}</label>
+        <input id="username" name="username" type="text" autocomplete="username" placeholder="{{ T.login_ph_user }}" required>
+        <label class="fl" for="password">{{ T.login_pass }}</label>
         <div class="passwrap">
-          <input id="password" name="password" type="password" autocomplete="current-password" placeholder="Введите пароль" required>
-          <button class="passtoggle" id="togglePassword" type="button" aria-label="Показать пароль"><span class="msr pw-on">visibility</span><span class="msr pw-off" style="display:none">visibility_off</span></button>
+          <input id="password" name="password" type="password" autocomplete="current-password" placeholder="{{ T.login_ph_pass }}" required>
+          <button class="passtoggle" id="togglePassword" type="button" aria-label="{{ T.login_show }}"><span class="msr pw-on">visibility</span><span class="msr pw-off" style="display:none">visibility_off</span></button>
         </div>
-        <button class="auth-submit" type="submit" style="margin-top:14px">Войти в панель <span class="msr">arrow_forward</span></button>
+        <button class="auth-submit" type="submit" style="margin-top:14px">{{ T.login_go }} <span class="msr">arrow_forward</span></button>
       </form>
-      <div class="auth-secure"><span class="shield"><span class="msr">shield</span></span><span>Сессия работает в локальной сети. Доступ можно ограничить вашим LAN.</span></div>
+      <div class="auth-secure"><span class="shield"><span class="msr">shield</span></span><span>{{ T.login_sec }}</span></div>
     </section>
   </div>
 </section>

@@ -2,6 +2,8 @@
 REM Baqylau Web — teacher/admin panel (light). Run on the teacher PC.
 cd /d "%~dp0"
 where python >nul 2>nul || (echo [Baqylau] Python not found in PATH & pause & exit /b 1)
+REM AI-перевод на казахский (Groq). Ключ — только через env, НЕ вписывать в файлы:
+REM set GROQ_API_KEY=gsk_ваш_ключ
 echo [Baqylau] Panel at http://127.0.0.1:5050  (LAN: check ipconfig IPv4)
 echo [Baqylau] First login: admin / admin123
 python -m server.app

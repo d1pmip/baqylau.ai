@@ -1,116 +1,130 @@
-{% extends "base.html" %}{% block t %}Панель{% endblock %}{% block b %}
+{% extends "base.html" %}{% block t %}{{ T.dash }}{% endblock %}{% block b %}
 {% if error %}<div class="alert err" role="alert"><span class="msr">error</span><span>{{ error }}</span></div>{% endif %}
 {% if ok %}<div class="alert ok" role="status"><span class="msr">check_circle</span><span>{{ ok }}</span></div>{% endif %}
+{% if upd.update %}<div class="alert ok" role="status"><span class="msr">update</span><span>{{ T.upd_new }}: server-v{{ upd.latest }} ({{ T.upd_you }} {{ upd.local }}) — <a href="{{ upd.url }}" target="_blank" rel="noopener">{{ T.upd_dl }}</a></span></div>{% endif %}
 <section class="row1">
   <div class="card exam">
-    <span class="live off" id="live"><i class="dot"></i><span id="liveTxt">Ожидание</span><span class="time" id="timer">00:00</span></span>
-    <h1 id="title">Экзамен не запущен</h1>
+    <span class="live off" id="live"><i class="dot"></i><span id="liveTxt">{{ T.dash_wait }}</span><span class="time" id="timer">00:00</span></span>
+    <h1 id="title">{{ T.dash_idle }}</h1>
     {% if not exams or not groups %}
-    <div class="hint">Сначала создайте {% if not exams %}<a href="/exams/new">экзамен</a>{% endif %}{% if not exams and not groups %} и {% endif %}{% if not groups %}<a href="/groups">группу с учениками</a>{% endif %} — иначе запуск невозможен.</div>
+    <div class="hint">{{ T.dash_mk_hint }} {% if not exams %}<a href="/exams/new">{{ T.dash_exam_link }}</a>{% endif %}{% if not exams and not groups %} {{ T.dash_and }} {% endif %}{% if not groups %}<a href="/groups">{{ T.dash_group_link }}</a>{% endif %} {{ T.dash_hint_end }}</div>
     {% endif %}
     <div class="ctrl">
       <form method="post" action="/session/start" style="display:contents" id="startForm">
-      <select class="sel-exam" name="exam_id" aria-label="Экзамен" {% if not exams %}disabled{% endif %}>{% for e in exams %}<option value="{{ e.id }}">{{ e.title }} ({{ e.subject }})</option>{% else %}<option value="" disabled selected>Нет экзаменов</option>{% endfor %}</select>
-      <select name="group_id" aria-label="Группа" {% if not groups %}disabled{% endif %}>{% if groups %}{% for g in groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}{% else %}<option value="" disabled selected>Нет групп</option>{% endif %}</select>
-      <button class="btn go" type="submit" id="go" {% if not exams or not groups %}disabled title="Создайте экзамен и группу"{% endif %}><span class="msr">play_arrow</span> Запустить</button>
+      <select class="sel-exam" name="exam_id" aria-label="{{ T.dash_exam_ph }}" {% if not exams %}disabled{% endif %}>{% for e in exams %}<option value="{{ e.id }}">{{ e.title }} ({{ e.subject }})</option>{% else %}<option value="" disabled selected>{{ T.dash_noexams }}</option>{% endfor %}</select>
+      <select name="group_id" aria-label="{{ T.dash_group_ph }}" {% if not groups %}disabled{% endif %}>{% if groups %}{% for g in groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}{% else %}<option value="" disabled selected>{{ T.dash_nogroups }}</option>{% endif %}</select>
+      <button class="btn go" type="submit" id="go" {% if not exams or not groups %}disabled title="{{ T.dash_mk_title }}"{% endif %}><span class="msr">play_arrow</span> {{ T.dash_start }}</button>
       </form>
       <form method="post" action="/session/stop" style="display:contents" id="stopForm">
-      <button class="btn stop" type="submit" id="stop" disabled><span>Завершить</span></button>
+      <button class="btn stop" type="submit" id="stop" disabled><span>{{ T.dash_stop }}</span></button>
       </form>
     </div>
   </div>
-  <div class="kpi lav"><span class="ic"><span class="msr">signal_cellular_alt</span></span><span class="lb">На связи</span><span class="n" id="kOn">—</span><span class="sub" id="kOnS"></span></div>
-  <div class="kpi yel" id="kRiskBox"><span class="ic"><span class="msr">bar_chart</span></span><span class="lb">Средний риск</span><span class="n" id="kRisk">—</span><span class="sub" id="kRiskS"></span></div>
-  <div class="kpi pink"><span class="ic"><span class="msr">notifications</span></span><span class="lb">Уведомления</span><span class="n" id="kNt">0</span><span class="sub">требуют реакции</span></div>
+  <div class="kpi lav"><span class="ic"><span class="msr">signal_cellular_alt</span></span><span class="lb">{{ T.dash_online }}</span><span class="n" id="kOn">—</span><span class="sub" id="kOnS"></span></div>
+  <div class="kpi yel" id="kRiskBox"><span class="ic"><span class="msr">bar_chart</span></span><span class="lb">{{ T.dash_risk }}</span><span class="n" id="kRisk">—</span><span class="sub" id="kRiskS"></span></div>
+  <div class="kpi pink"><span class="ic"><span class="msr">notifications</span></span><span class="lb">{{ T.dash_notes }}</span><span class="n" id="kNt">0</span><span class="sub">{{ T.dash_need }}</span></div>
 </section>
 
 <div class="cols">
   <section>
     <div class="bar">
-      <h2>Студенты</h2>
-      <select id="fGroup" class="sel-group" aria-label="Фильтр по группе"><option value="all">Все группы</option></select>
-      <button class="chip" data-f="all" aria-pressed="true">Все</button>
-      <button class="chip" data-f="on" aria-pressed="false">Онлайн</button>
-      <button class="chip" data-f="risk" aria-pressed="false">С риском</button>
+      <h2>{{ T.dash_students }}</h2>
+      <select id="fGroup" class="sel-group" aria-label="{{ T.dash_group_ph }}"><option value="all">{{ T.dash_allgroups }}</option></select>
+      <button class="chip" data-f="all" aria-pressed="true">{{ T.dash_all }}</button>
+      <button class="chip" data-f="on" aria-pressed="false">{{ T.dash_on }}</button>
+      <button class="chip" data-f="risk" aria-pressed="false">{{ T.dash_risky }}</button>
     </div>
     <div class="grid" id="grid"></div>
   </section>
   <aside class="card ev">
-    <h3>Последние события</h3>
+    <h3>{{ T.dash_events }}</h3>
     <ol id="events"></ol>
   </aside>
 </div>
 <script>
-const LBL={face_missing:'Нет лица',phone:'Телефон в кадре',phone_raised:'Телефон поднят',
+const BQ_LANG='{{ lang }}';
+const LBL_RU={face_missing:'Нет лица',phone:'Телефон в кадре',phone_raised:'Телефон поднят',
 reading_device:'Чтение с телефона',head_turn:'Поворот головы',head_sustained:'Взгляд в сторону',
 gaze_off:'Взгляд мимо',gaze_sustained:'Взгляд мимо',gaze_focus:'Взгляд + фокус',gaze_relaxed:'Невнимание',
 shortcut:'Горячие клавиши',focus_lost:'Уход из окна',multi_person:'Второй человек',drowsy:'Усталость',jaw:'Разговор?'};
+const LBL_KK={face_missing:'Бет жоқ',phone:'Кадрда телефон',phone_raised:'Телефон көтерілген',
+reading_device:'Телефоннан оқу',head_turn:'Бас бұру',head_sustained:'Жан-жаққа қарау',
+gaze_off:'Көзқарас басқақта',gaze_sustained:'Көзқарас басқақта',gaze_focus:'Көзқарас + фокус',gaze_relaxed:'Зейінсіздік',
+shortcut:'Ыстық пернелер',focus_lost:'Терезеден шығу',multi_person:'Екінші адам',drowsy:'Шаршау',jaw:'Сөйлесу?'};
+const LBL=BQ_LANG==='kk'?LBL_KK:LBL_RU;
+const S={notes:'{{ T.dash_notes }}',run:'{{ T.dash_run }}',running:'{{ T.dash_running }}',
+wait:'{{ T.dash_wait }}',idle:'{{ T.dash_idle }}',off:'{{ T.dash_off }}',offline:'{{ T.dash_offline }}',
+low:'{{ T.dash_low }}',med:'{{ T.dash_med }}',high:'{{ T.dash_high }}',allgroups:'{{ T.dash_allgroups }}',
+noone:'{{ T.dash_noone }}',nonegroup:'{{ T.dash_nonegroup }}',nosignal:'{{ T.dash_nosignal }}',
+onl:'{{ T.dash_onl }}',noch:'{{ T.dash_nochr }}',open:'{{ T.dash_open }}',warn:'{{ T.dash_warn }}',
+warnq:'{{ T.dash_warnq }}',nosrv:'{{ T.dash_nosrv }}',nosrv_ev:'{{ T.dash_nosrv_ev }}',
+quiet:'{{ T.dash_quiet }}',sure:'{{ T.dash_sure }}',stop:'{{ T.dash_stop }}'};
 const lvl=r=>r>=65?['high','HIGH','var(--bad)','var(--bad)']:r>=45?['med','MEDIUM','var(--warn)','#F0A04B']:r>=20?['low','LOW','var(--ok)','#7CC24A']:['low','OK','var(--ok)','#7CC24A'];
 const faceSvg='<svg class="face" viewBox="0 0 120 80"><circle cx="60" cy="30" r="17" fill="#F3F0FF"/><path d="M22 80c0-20 17-30 38-30s38 10 38 30z" fill="#DAD3FD"/></svg>';
 let filter='all',fGroup='all',t0=null,timer=null;
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-function fmtT(ts){if(!ts)return '—';const d=new Date(ts*1000);return isNaN(d)?'—':d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}
+function fmtT(ts){if(!ts)return '—';const d=new Date(ts*1000);return isNaN(d)?'—':d.toLocaleTimeString(BQ_LANG==='kk'?'kk-KZ':'ru-RU',{hour:'2-digit',minute:'2-digit'})}
 function tickCards(j){
-  document.querySelector('a[href="/notifications"]').innerHTML='Уведомления '+(j.unseen?`<span class="badge">${j.unseen}</span>`:'');
+  document.querySelector('a[href="/notifications"]').innerHTML=S.notes+' '+(j.unseen?`<span class="badge">${j.unseen}</span>`:'');
   $('kNt').textContent=j.unseen;
   const s=j.session||{active:false};
   if(s.active){
     if(!t0)t0=s.started_at*1000;
-    $('live').classList.remove('off');$('liveTxt').textContent='Идёт';
-    $('title').textContent=s.title||'Экзамен идёт';
+    $('live').classList.remove('off');$('liveTxt').textContent=S.run;
+    $('title').textContent=s.title||S.running;
     $('go').disabled=true;$('stop').disabled=false;
   }else{
-    t0=null;$('live').classList.add('off');$('liveTxt').textContent='Ожидание';
-    $('title').textContent='Экзамен не запущен';$('timer').textContent='00:00';
+    t0=null;$('live').classList.add('off');$('liveTxt').textContent=S.wait;
+    $('title').textContent=S.idle;$('timer').textContent='00:00';
     $('go').disabled=false;$('stop').disabled=true;
   }
   const on=j.cards.filter(c=>/с$/.test(c.ago));
   $('kOn').textContent=on.length+'/'+j.cards.length;
-  $('kOnS').textContent=(j.cards.length-on.length)+' офлайн';
+  $('kOnS').textContent=(j.cards.length-on.length)+' '+S.off;
   const avg=j.cards.length?Math.round(j.cards.reduce((a,c)=>a+c.risk,0)/j.cards.length):0;
   const c=lvl(avg)[0];
   $('kRisk').textContent=j.cards.length?avg:'—';
-  $('kRiskS').textContent=c==='high'?'высокий':c==='med'?'средний':'низкий';
+  $('kRiskS').textContent=c==='high'?S.high:c==='med'?S.med:S.low;
   $('kRiskBox').className='kpi '+(c==='high'?'pink':c==='med'?'yel':'lime');
   const gs=[...new Set(j.cards.map(c=>c.group))].sort();
   const fg=$('fGroup'),prev=fGroup;
-  fg.innerHTML='<option value="all">Все группы</option>'+gs.map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join('');
+  fg.innerHTML='<option value="all">'+esc(S.allgroups)+'</option>'+gs.map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join('');
   if(gs.includes(prev)){fg.value=prev;}else{fGroup='all';fg.value='all';}
   const list=j.cards.filter(c=>(filter==='all'||(filter==='on'&&/с$/.test(c.ago))||(filter==='risk'&&c.risk>30))&&(fGroup==='all'||c.group===fGroup)).sort((a,b)=>b.risk-a.risk);
   $('grid').innerHTML=list.length?list.map(c=>{
     const [cl,nm,col,bar]=lvl(c.risk),live=/с$/.test(c.ago);
     return `<article class="card st">
       <div><div class="nm">${c.name}</div><div class="meta">${c.group} · ${c.exam}</div></div>
-      <div class="cam">${c.thumb?`<img src="data:image/jpeg;base64,${c.thumb}">`:faceSvg}${live?'<i class="frame"></i>':`<div class="off">Нет сигнала · ${c.ago}</div>`}<span class="lvl ${cl}">${nm}</span></div>
-      <div class="score"><b style="color:${col}">${Math.round(c.risk)}</b><span class="${live?'on':''}"><i></i>${live?'онлайн':'офлайн · '+c.ago}</span></div>
+      <div class="cam">${c.thumb?`<img src="data:image/jpeg;base64,${c.thumb}">`:faceSvg}${live?'<i class="frame"></i>':`<div class="off">${S.nosignal} · ${c.ago}</div>`}<span class="lvl ${cl}">${nm}</span></div>
+      <div class="score"><b style="color:${col}">${Math.round(c.risk)}</b><span class="${live?'on':''}"><i></i>${live?S.onl:S.off+' · '+c.ago}</span></div>
       <div class="track"><div style="width:${Math.min(100,c.risk)}%;background:${bar}"></div><em style="left:20%"></em><em style="left:45%"></em><em style="left:65%"></em></div>
-      <div class="tags">${c.violations.length?c.violations.map(v=>`<span class="tag ${/phone|reading/.test(v.kind)?'ph':''}">${LBL[v.kind]||v.kind}</span>`).join(''):'<span class="tag none">Нарушений нет</span>'}</div>
-      <div class="acts"><a href="/notifications">Открыть</a><button data-w="${c.id}" data-n="${c.name}">Предупредить</button></div>
-    </article>`;}).join(''):(fGroup==='all'&&filter==='all'?'<div class="card empty">Здесь пока никого нет</div>':'<div class="card empty">В этой группе никого не найдено</div>');
+      <div class="tags">${c.violations.length?c.violations.map(v=>`<span class="tag ${/phone|reading/.test(v.kind)?'ph':''}">${LBL[v.kind]||v.kind}</span>`).join(''):`<span class="tag none">${S.noch}</span>`}</div>
+      <div class="acts"><a href="/notifications">${S.open}</a><button data-w="${c.id}" data-n="${c.name}">${S.warn}</button></div>
+    </article>`;}).join(''):(fGroup==='all'&&filter==='all'?`<div class="card empty">${S.noone}</div>`:`<div class="card empty">${S.nonegroup}</div>`);
   document.querySelectorAll('[data-w]').forEach(b=>b.onclick=()=>warn(+b.dataset.w,b.dataset.n));
   $('events').innerHTML=(j.recent||[]).map(e=>{
-    const col=e.kind==='RISK100'?'var(--bad)':e.kind==='warn'?'var(--warn)':'#A5AB9C';
+    const col=e.kind==='RISK100'?'var(--bad)':(e.kind==='warn'||e.kind==='relogin')?'var(--warn)':'#A5AB9C';
     return `<li><i style="background:${col}"></i><div><b>${e.who}</b> — ${e.text}<small>${fmtT(e.t)}</small></div></li>`;}).join('')
-    ||'<li><div>Пока тихо</div></li>';
+    ||`<li><div>${S.quiet}</div></li>`;
 }
 function showOffline(){
   document.body.classList.add('offline');
   t0=null;$('timer').textContent='00:00';
-  $('live').classList.add('off');$('liveTxt').textContent='Оффлайн';
-  $('kOn').textContent='—';$('kOnS').textContent='оффлайн';
-  $('kRisk').textContent='—';$('kRiskS').textContent='оффлайн';
+  $('live').classList.add('off');$('liveTxt').textContent=S.offline;
+  $('kOn').textContent='—';$('kOnS').textContent=S.off;
+  $('kRisk').textContent='—';$('kRiskS').textContent=S.off;
   $('kRiskBox').className='kpi yel';
   $('kNt').textContent='—';
   $('go').disabled=true;$('stop').disabled=true;
-  $('grid').innerHTML='<div class="card empty">Нет связи с сервером — блоки недоступны (оффлайн)</div>';
-  $('events').innerHTML='<li><div>Нет связи с сервером</div></li>';
+  $('grid').innerHTML=`<div class="card empty">${S.nosrv}</div>`;
+  $('events').innerHTML=`<li><div>${S.nosrv_ev}</div></li>`;
 }
 async function tick(){try{const r=await fetch('/api/teacher/state');if(!r.ok)throw 0;const j=await r.json();
 if(j.error){location.href='/login';return;}
 document.body.classList.remove('offline');tickCards(j);}catch(e){showOffline();}}
 async function warn(id,name){
-  const v=await bqConfirm(`Отправить предупреждение ученику «${name}»?`);if(!v)return;
+  const v=await bqConfirm(`${S.warnq} «${name}»?`);if(!v)return;
   await fetch('/api/warn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({student_id:id})});
   tick();
 }
@@ -118,8 +132,8 @@ document.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{filter=b.dataset.f;
 document.getElementById('fGroup').addEventListener('change',e=>{fGroup=e.target.value;tick();});
 document.getElementById('stopForm').addEventListener('submit',e=>{
   const b=document.getElementById('stop');
-  if(!b.classList.contains('sure')){e.preventDefault();b.classList.add('sure');b.querySelector('span').textContent='Точно завершить?';
-    setTimeout(()=>{b.classList.remove('sure');b.querySelector('span').textContent='Завершить';},3000);}
+  if(!b.classList.contains('sure')){e.preventDefault();b.classList.add('sure');b.querySelector('span').textContent=S.sure;
+    setTimeout(()=>{b.classList.remove('sure');b.querySelector('span').textContent=S.stop;},3000);}
 });
 setInterval(()=>{if(t0){const s=Math.floor((Date.now()-t0)/1000);
   document.getElementById('timer').textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');}},1000);

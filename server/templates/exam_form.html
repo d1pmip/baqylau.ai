@@ -1,39 +1,102 @@
-{% extends "base.html" %}{% block t %}Новый экзамен{% endblock %}{% block b %}
-<div class="pagehead"><div><small>БАНК ТЕСТОВ</small><h2>Новый экзамен</h2></div></div>
+{% extends "base.html" %}{% block t %}{{ T.ef_new }}{% endblock %}{% block b %}
+<div class="pagehead"><div><small>{{ T.e_bank }}</small><h2>{{ T.ef_new }}</h2></div></div>
 <div class="card block">
 {% if error %}<p class="err">{{ error }}</p>{% endif %}
 <form method="post" enctype="multipart/form-data" onsubmit="return pack()">
-<div class="formrow exambase"><input name="title" placeholder="Название" required>
-<input name="subject" placeholder="Предмет">
-<label class="dur">Длительность<span class="durbox"><input name="duration_min" type="number" value="30" min="1"> мин</span></label></div>
+<div class="formrow exambase"><input name="title" placeholder="{{ T.ef_title_ph }}" required>
+<input name="subject" placeholder="{{ T.ef_subj_ph }}">
+<label class="dur">{{ T.ef_dur }}<span class="durbox"><input name="duration_min" type="number" value="30" min="1"> {{ T.ef_min }}</span></label></div>
+<div class="formrow">
+  <label class="chip" style="cursor:pointer"><input type="checkbox" id="aiToggle" style="accent-color:#1A1A1A"> {{ T.ef_ai }}</label>
+  <button class="btn p sm" type="button" id="aiBtn" disabled><span class="msr">translate</span> {{ T.ef_ai_btn }}</button>
+</div>
+<div class="formrow">
+  <button class="chip" type="button" id="tabRu" aria-pressed="true">{{ T.ef_tab_ru }}</button>
+  <button class="chip" type="button" id="tabKk" aria-pressed="false">{{ T.ef_tab_kk }}</button>
+</div>
+<p class="hint" id="kkHint" hidden>{{ T.ef_kk_hint }}</p>
 <div id="qs"></div>
+<div id="qsKk" hidden></div>
 <div class="formrow examacts">
-<button class="btn y" type="button" onclick="addQ()">+ Вопрос</button>
-<button class="btn g" type="submit">Сохранить</button></div>
+<button class="btn y" type="button" onclick="addQ()">{{ T.ef_addq }}</button>
+<button class="btn g" type="submit">{{ T.ef_save }}</button></div>
 <input type="hidden" name="questions_json" id="qj">
 </form></div>
 <script>
+const ET={q:'{{ T.ef_q }}',delq:'{{ T.ef_delq }}',qph:'{{ T.ef_q_ph }}',img:'{{ T.ef_img }}',
+opt:'{{ T.ef_opt }}',need_title:'{{ T.ef_need_title }}',need_opt:'{{ T.ef_need_opt }}',
+need_one:'{{ T.ef_need_one }}',ai_fail:'{{ T.ef_ai_fail }}',ai_nokey:'{{ T.ef_ai_nokey }}',
+ai_busy:'{{ T.ef_ai_busy }}',ai_btn:'{{ T.ef_ai_btn }}'};
 let qseq=0;
 function updNums(){document.querySelectorAll('#qs .qcard').forEach((d,i)=>{
-d.querySelector('.qnum').textContent='Вопрос '+(i+1);});}
+d.querySelector('.qnum').textContent=ET.q+' '+(i+1);});
+document.querySelectorAll('#qsKk .qcard').forEach((d,i)=>{
+d.querySelector('.qnum').textContent=ET.q+' '+(i+1);});}
 function addQ(q){q=q||{q:'',options:['','','',''],correct:0};
  const d=document.createElement('div');d.className='qcard';const n=qseq++;
- d.innerHTML=`<div class="qhead"><span class="qnum"></span><button class="btn r sm" type="button" onclick="this.closest('.qcard').remove();updNums();">Убрать вопрос</button></div>
- <input class="qt" placeholder="Текст вопроса *">
- <label class="imgpick"><span class="msr">image</span><span class="imgtxt">Картинка к вопросу (до 3 МБ)</span><input type="file" name="qimg_${n}" accept="image/*" hidden onchange="this.closest('.imgpick').querySelector('.imgtxt').textContent=this.files[0]?this.files[0].name:'Картинка к вопросу (до 3 МБ)'"></label>
- <div class="opts">${q.options.map((o,i)=>`<label class="optrow"><input type="radio" name="c${n}" ${i===q.correct?'checked':''} value="${i}" title="Правильный ответ"><input class="qo" placeholder="Вариант ${i+1}"></label>`).join('')}</div>`;
+ d.innerHTML=`<div class="qhead"><span class="qnum"></span><button class="btn r sm" type="button" onclick="this.closest('.qcard').remove();updNums();">${ET.delq}</button></div>
+ <input class="qt" placeholder="${ET.qph}" value="${(q.q||'').replace(/"/g,'&quot;')}">
+ <label class="imgpick"><span class="msr">image</span><span class="imgtxt">${ET.img}</span><input type="file" name="qimg_${n}" accept="image/*" hidden onchange="this.closest('.imgpick').querySelector('.imgtxt').textContent=this.files[0]?this.files[0].name:'${ET.img}'"></label>
+ <div class="opts">${q.options.map((o,i)=>`<label class="optrow"><input type="radio" name="c${n}" ${i===q.correct?'checked':''} value="${i}" title="*"><input class="qo" placeholder="${ET.opt} ${i+1}" value="${String(o).replace(/"/g,'&quot;')}"></label>`).join('')}</div>`;
  document.getElementById('qs').appendChild(d);updNums();}
-function pack(){const out=[];let bad='';
+function collectRu(){const out=[];let bad='';
  document.querySelectorAll('#qs .qcard').forEach((d,ord)=>{
   d.querySelector('input[type=file]').name='qimg_'+ord;
   const opts=[...d.querySelectorAll('.qo')].map(i=>i.value.trim()).filter(o=>o);
-  const c=d.querySelector('input[type=radio]:checked');
   const t=d.querySelector('.qt').value.trim();
-  if(!t)bad='У всех вопросов должен быть текст';
-  else if(opts.length<2)bad='Нужно минимум 2 варианта ответа';
-  else out.push({q:d.querySelector('.qt').value,options:[...d.querySelectorAll('.qo')].map(i=>i.value),correct:c?+c.value:0});});
+  if(!t)bad=ET.need_title;
+  else if(opts.length<2)bad=ET.need_opt;
+  else out.push({q:d.querySelector('.qt').value,options:[...d.querySelectorAll('.qo')].map(i=>i.value)});});
+ return {out,bad};}
+function buildKk(list){const box=document.getElementById('qsKk');box.innerHTML='';
+ list.forEach((q,i)=>{
+  const d=document.createElement('div');d.className='qcard';d.dataset.i=i;
+  d.innerHTML=`<div class="qhead"><span class="qnum"></span></div>
+  <input class="qkt" placeholder="${ET.qph}" value="${String(q.q||'').replace(/"/g,'&quot;')}">
+  <div class="opts">${q.options.map((o,j)=>`<label class="optrow"><input class="qko" placeholder="${ET.opt} ${j+1}" value="${String(o).replace(/"/g,'&quot;')}"></label>`).join('')}</div>`;
+  box.appendChild(d);});
+ updNums();showTab('kk');}
+function collectKk(n){const res=[];
+ for(let i=0;i<n;i++){
+  const d=document.querySelector(`#qsKk .qcard[data-i="${i}"]`);
+  if(!d){res.push({});continue;}
+  res.push({q:d.querySelector('.qkt').value,options:[...d.querySelectorAll('.qko')].map(x=>x.value)});}
+ return res;}
+function pack(){const {out,bad}=collectRu();
  if(bad){bqAlert(bad);return false;}
- if(!out.length){bqAlert('Добавьте хотя бы один вопрос');return false;}
- document.getElementById('qj').value=JSON.stringify(out);return true;}
+ if(!out.length){bqAlert(ET.need_one);return false;}
+ const kk=collectKk(out.length);
+ const full=out.map((q,i)=>{
+  const k=kk[i]||{};const o={...q};
+  if((k.q||'').trim())o.q_kk=k.q;
+  const ko=(k.options||[]).map(x=>x||'');
+  if(ko.length===q.options.length&&ko.some(x=>x.trim()))o.options_kk=ko;
+  const c=document.querySelectorAll('#qs .qcard')[i].querySelector('input[type=radio]:checked');
+  o.correct=c?+c.value:0;
+  return o;});
+ document.getElementById('qj').value=JSON.stringify(full);return true;}
+function showTab(w){const ru=w==='ru';
+ document.getElementById('qs').hidden=!ru;document.getElementById('qsKk').hidden=ru;
+ document.getElementById('kkHint').hidden=ru;
+ document.getElementById('tabRu').setAttribute('aria-pressed',ru);
+ document.getElementById('tabKk').setAttribute('aria-pressed',!ru);}
+document.getElementById('tabRu').onclick=()=>showTab('ru');
+document.getElementById('tabKk').onclick=()=>showTab('kk');
+const aiT=document.getElementById('aiToggle'),aiB=document.getElementById('aiBtn');
+aiT.onchange=()=>{aiB.disabled=!aiT.checked;};
+aiB.onclick=async()=>{
+ if(!aiT.checked)return;
+ const {out,bad}=collectRu();
+ if(bad){bqAlert(bad);return;}
+ if(!out.length){bqAlert(ET.need_one);return;}
+ aiB.disabled=true;const old=aiB.innerHTML;aiB.innerHTML=ET.ai_busy;
+ try{
+  const r=await fetch('/api/translate_kk',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({questions:out.map(q=>({q:q.q,options:q.options}))})});
+  const j=await r.json();
+  if(!r.ok)throw new Error(j.error||ET.ai_fail);
+  buildKk(j.questions);
+ }catch(e){bqAlert(ET.ai_fail+': '+(e.message||e));}
+ aiB.innerHTML=old;aiB.disabled=!aiT.checked;};
 addQ();
 </script>{% endblock %}

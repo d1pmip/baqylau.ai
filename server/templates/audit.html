@@ -1,19 +1,19 @@
-{% extends "base.html" %}{% block t %}Аудит{% endblock %}{% block b %}
-<div class="pagehead"><div><small>ВСЯ ИНФОРМАЦИЯ · ТОЛЬКО АДМИН</small><h2>Аудит</h2></div></div>
-<div class="card block"><div class="sec">Действия</div>
-<div class="tblwrap"><table><tr><th>ID</th><th>Время</th><th>Кто</th><th>Тип</th><th>Детали</th></tr>
+{% extends "base.html" %}{% block t %}{{ T.a_title }}{% endblock %}{% block b %}
+<div class="pagehead"><div><small>{{ T.a_all }}</small><h2>{{ T.a_title }}</h2></div></div>
+<div class="card block"><div class="sec">{{ T.a_actions }}</div>
+<div class="tblwrap"><table><tr><th>{{ T.th_id }}</th><th>{{ T.th_time }}</th><th>{{ T.th_who }}</th><th>{{ T.th_type }}</th><th>{{ T.th_det }}</th></tr>
 {% for r in rows %}<tr><td>{{ r.id }}</td><td class="ts">{{ r.ts|dt }}</td><td>{{ r.actor }}</td><td>{{ r.kind }}</td><td>{{ r.detail }}</td></tr>
-{% else %}<tr><td colspan="5"><div class="empty">Пусто</div></td></tr>{% endfor %}</table></div></div>
-<div class="card block"><div class="sec">Все доказательства (фото/видео)</div>
-<div class="tblwrap"><table><tr><th>ID</th><th>Ученик</th><th>Тип</th><th>Риск</th><th>Где</th><th>Превью</th></tr>
+{% else %}<tr><td colspan="5"><div class="empty">{{ T.a_empty }}</div></td></tr>{% endfor %}</table></div></div>
+<div class="card block"><div class="sec">{{ T.a_allev }}</div>
+<div class="tblwrap"><table><tr><th>{{ T.th_id }}</th><th>{{ T.th_student }}</th><th>{{ T.th_type }}</th><th>{{ T.th_risk }}</th><th>{{ T.th_where }}</th><th>{{ T.th_prev }}</th></tr>
 {% for e in evs %}<tr><td>{{ e.id }}</td><td><b>{{ e.student }}</b></td><td>{{ e.kind }}</td><td>{{ e.risk }}</td>
-<td>{{ 'Drive' if e.drive_link else 'Локально' }}</td>
+<td>{{ 'Drive' if e.drive_link else T.a_local }}</td>
 <td>{% if e.path.endswith('.mp4') %}<video controls preload="metadata" width="300" src="/evidence/{{ e.path }}"></video>
 {% elif e.path %}<a href="/evidence/{{ e.path }}"><img src="/evidence/{{ e.path }}" style="max-width:220px;border-radius:12px" loading="lazy"></a>
 {% else %}—{% endif %}</td></tr>
-{% else %}<tr><td colspan="6"><div class="empty">Нет файлов</div></td></tr>{% endfor %}</table></div></div>
-<div class="card block"><div class="sec">Все результаты тестов</div>
-<div class="tblwrap"><table><tr><th>Ученик</th><th>Экзамен</th><th>Балл</th></tr>
+{% else %}<tr><td colspan="6"><div class="empty">{{ T.a_nofiles }}</div></td></tr>{% endfor %}</table></div></div>
+<div class="card block"><div class="sec">{{ T.a_res }}</div>
+<div class="tblwrap"><table><tr><th>{{ T.th_student }}</th><th>{{ T.th_exam }}</th><th>{{ T.th_score }}</th></tr>
 {% for s in subs %}<tr><td><b>{{ s.student }}</b></td><td>{{ s.exam }}</td><td>{{ s.score }}/{{ s.total }}</td></tr>
-{% else %}<tr><td colspan="3"><div class="empty">Пока никто не сдал</div></td></tr>{% endfor %}</table></div></div>
+{% else %}<tr><td colspan="3"><div class="empty">{{ T.a_nosub }}</div></td></tr>{% endfor %}</table></div></div>
 {% endblock %}

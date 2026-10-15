@@ -1,14 +1,14 @@
-{% extends "base.html" %}{% block t %}Пользователи{% endblock %}{% block b %}
-<div class="pagehead"><div><small>ДОСТУП · ТОЛЬКО АДМИН</small><h2>Пользователи</h2></div></div>
+{% extends "base.html" %}{% block t %}{{ T.u_title }}{% endblock %}{% block b %}
+<div class="pagehead"><div><small>{{ T.u_access }}</small><h2>{{ T.u_title }}</h2></div></div>
 {% if error %}<div class="alert err" role="alert"><span class="msr">error</span><span>{{ error }}</span></div>{% endif %}
 <div class="card block">
-<form method="post" class="formrow"><input name="full_name" placeholder="ФИО" required>
-<input name="username" placeholder="Логин" required>
-<input name="password" placeholder="Пароль" value="1234">
-<select name="role"><option value="teacher">Преподаватель</option><option value="admin">Админ</option></select>
-<button class="btn p" type="submit">+ Добавить</button></form>
-<div class="tblwrap"><table><tr><th>Логин</th><th>Имя</th><th>Роль</th><th></th></tr>
+<form method="post" class="formrow"><input name="full_name" placeholder="{{ T.fio }}" required>
+<input name="username" placeholder="{{ T.login_ph }}" required>
+<input name="password" placeholder="{{ T.pass_ph }}" value="1234">
+<select name="role"><option value="teacher">{{ T.u_role_t }}</option><option value="admin">{{ T.u_role_a }}</option></select>
+<button class="btn p" type="submit">{{ T.u_add }}</button></form>
+<div class="tblwrap"><table><tr><th>{{ T.th_login }}</th><th>{{ T.u_name }}</th><th>{{ T.u_role }}</th><th></th></tr>
 {% for u in users %}<tr><td><b>{{ u.username }}</b></td><td>{{ u.full_name }}</td>
 <td><span class="pill {{ 'CRITICAL' if u.role=='admin' else 'MEDIUM' }}">{{ u.role }}</span></td>
-<td>{% if u.username != session.user.username %}<form method="post" action="/users/{{ u.id }}/delete" style="display:inline" data-confirm="Удалить {{ u.username }}?"><button class="btn r sm" type="submit" title="Удалить пользователя"><span class="msr">close</span></button></form>{% endif %}</td></tr>{% endfor %}</table></div></div>
+<td>{% if u.username != session.user.username %}<form method="post" action="/users/{{ u.id }}/delete" style="display:inline" data-confirm="{{ T.u_del_q }} {{ u.username }}?"><button class="btn r sm" type="submit" title="{{ T.u_del_q }}"><span class="msr">close</span></button></form>{% endif %}</td></tr>{% endfor %}</table></div></div>
 {% endblock %}

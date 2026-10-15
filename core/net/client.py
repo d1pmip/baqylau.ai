@@ -84,8 +84,11 @@ class BaqylauClient:
     def session(self) -> dict:
         return self._req("GET", "/api/session") or {}
 
-    def exam(self) -> dict:
-        return self._req("GET", "/api/exam") or {}
+    def exam(self, lang: str = "") -> dict:
+        path = "/api/exam"
+        if str(lang or "").lower() in ("kk", "kz", "kaz"):
+            path += "?lang=kk"
+        return self._req("GET", path) or {}
 
     def submit(self, answers: list) -> dict:
         return self._req("POST", "/api/submit", {"answers": answers}) or {}
