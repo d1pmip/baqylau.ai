@@ -30,6 +30,19 @@ IMG_MAX_BYTES = 3 * 1024 * 1024
 MAIN_VIOLATIONS = ("face_missing", "phone", "phone_raised", "reading_device",
                    "head_sustained", "gaze_sustained", "focus_lost", "shortcut")
 
+# Человекочитаемые причины для ленты событий (зеркало LBL с дашборда):
+# в уведомлениях — причина («телефон»), а не сухой «риск 100».
+VIOL_LABELS = {"face_missing": "нет лица", "phone": "телефон в кадре",
+               "phone_raised": "телефон поднят",
+               "reading_device": "чтение с телефона",
+               "head_turn": "поворот головы",
+               "head_sustained": "взгляд в сторону",
+               "gaze_off": "взгляд мимо", "gaze_sustained": "взгляд мимо",
+               "gaze_focus": "взгляд + фокус", "gaze_relaxed": "невнимание",
+               "shortcut": "горячие клавиши", "focus_lost": "уход из окна",
+               "multi_person": "второй человек", "drowsy": "усталость",
+               "jaw": "разговор?"}
+
 IMPORT_EXTS = {".xlsx", ".xlsm", ".xls", ".csv"}
 IMPORT_MAX_BYTES = 5 * 1024 * 1024
 
@@ -871,7 +884,33 @@ def create_app(db_path: str = DB) -> Flask:
             u = d.verify_user(c, data.get("username", ""), data.get("password", ""))
             if not u or u["role"] != "student":
                 return jsonify({"error": "auth"}), 401
+            # Защита от повторного входа: один активный токен на ученика.
+            # Новый вход гасит прежнюю сессию (второе устройство вылетает
+            # в 401), а преподаватель получает предупреждение — только если
+            # ученик прямо сейчас онлайн в активном экзамене.
+            old = c.execute("SELECT token FROM tokens WHERE user_id=?",
+                            (u["id"],)).fetchall()
+            was_online = False
+            if old:
+                s = _student_session(c, u["id"])
+                if s is not None and s["status"] == "active":
+                    hb = c.execute(
+                        "SELECT updated_at FROM heartbeats WHERE student_id=?",
+                        (u["id"],)).fetchone()
+                    try:
+                        last = float(hb["updated_at"]) if hb and hb["updated_at"] else 0.0
+                    except Exception:
+                        last = 0.0
+                    was_online = (time.time() - last) < 90
+                c.execute("DELETE FROM tokens WHERE user_id=?", (u["id"],))
             tok = d.make_token(c, u["id"])
+            if was_online:
+                who = u["full_name"] or u["username"]
+                detail = f"{who}: повторный вход в экзамен (прежняя сессия завершена)"
+                c.execute(
+                    "INSERT INTO notifications(ts,student,kind,detail) VALUES(?,?,?,?)",
+                    (time.time(), who, "relogin", detail))
+                d.audit(c, u["username"], "relogin", who)
             return jsonify({"token": tok, "name": u["full_name"] or u["username"],
                             "group_id": u["group_id"]})
         finally:
@@ -1002,11 +1041,31 @@ def create_app(db_path: str = DB) -> Flask:
                 (u["id"], session_id, kind, name, link, risk, time.time()))
             evid = cur.lastrowid
             who = u["full_name"] or u["username"]
+            # В ленту — причина, а не «риск 100»: забираем свежие нарушения
+            # ученика из последнего heartbeat.
+            causes: list = []
+            try:
+                hb = c.execute(
+                    "SELECT violations_json FROM heartbeats WHERE student_id=?",
+                    (u["id"],)).fetchone()
+                if hb and hb["violations_json"]:
+                    for v in d.jload(hb["violations_json"], []):
+                        k = v.get("kind") if isinstance(v, dict) else None
+                        label = VIOL_LABELS.get(k, k or "")
+                        if label and label not in causes:
+                            causes.append(label)
+            except Exception:
+                causes = []
+            if causes:
+                detail = f"{who}: {', '.join(causes[:4])}"
+            else:
+                detail = (f"{who}: "
+                          f"{'видеофиксация' if kind == 'video' else 'фотофиксация'}")
+            detail += " [Drive]" if link else " [локально]"
             c.execute(
                 "INSERT INTO notifications(ts,student,kind,detail,evidence_id) VALUES(?,?,?,?,?)",
                 (time.time(), who, "RISK100" if risk >= 100 else kind,
-                 f"{who}: риск {risk:.0f} ({kind})" + (" [Drive]" if link else " [локально]"),
-                 evid))
+                 detail, evid))
             c.commit()
             return jsonify({"ok": True, "id": evid, "drive": bool(link)})
         finally:

@@ -1034,6 +1034,7 @@ class BentoWindow(QMainWindow):
                 self.exam_stack.setCurrentIndex(idx)
             self.exam_progress.setText(f"Вопрос {idx + 1} / {n}")
             self._refresh_exam_dots(idx, animate=animate, prev=prev)
+            self._animate_dots_from_bottom()
             try:
                 self.btn_prev.setEnabled(idx > 0)
                 self.btn_next.setText("Вперед →" if idx < n - 1 else "К концу →")
@@ -1256,6 +1257,74 @@ class BentoWindow(QMainWindow):
         except Exception:
             pass
 
+    def _animate_dots_from_bottom(self) -> None:
+        """Точки-индикаторы выезжают снизу с fade при смене вопроса (~240мс).
+
+        Анимируются pos (+14px -> место) и opacity; layout не трогаем —
+        конечная позиция совпадает с позицией layout, прыжка нет.
+        """
+        try:
+            from PySide6.QtCore import QPoint as _QP
+            wrap = getattr(self, "_exam_dots_wrap", None)
+            lay = wrap.layout() if wrap is not None else None
+            if lay is None:
+                return
+            kids = []
+            for i in range(lay.count()):
+                try:
+                    _w = lay.itemAt(i).widget()
+                except Exception:
+                    _w = None
+                if _w is not None:
+                    kids.append(_w)
+            if not kids:
+                return
+            grp = QParallelAnimationGroup(self)
+            for w in kids:
+                try:
+                    base = w.pos()
+                    a = QPropertyAnimation(w, b"pos", self)
+                    a.setDuration(240)
+                    a.setStartValue(base + _QP(0, 14))
+                    a.setEndValue(base)
+                    a.setEasingCurve(QEasingCurve.OutCubic)
+                    grp.addAnimation(a)
+                    eff = QGraphicsOpacityEffect(w)
+                    eff.setOpacity(0.0)
+                    w.setGraphicsEffect(eff)
+                    o = QPropertyAnimation(eff, b"opacity", self)
+                    o.setDuration(240)
+                    o.setStartValue(0.0)
+                    o.setEndValue(1.0)
+                    o.setEasingCurve(QEasingCurve.OutCubic)
+                    grp.addAnimation(o)
+                except Exception:
+                    continue
+
+            def _done() -> None:
+                try:
+                    for w in kids:
+                        try:
+                            if w.graphicsEffect() is not None:
+                                w.setGraphicsEffect(None)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+            try:
+                grp.finished.connect(_done)
+            except Exception:
+                pass
+            try:
+                self._dot_anims = (getattr(self, "_dot_anims", []) or [])[-8:]
+            except Exception:
+                self._dot_anims = []
+            self._dot_anims.append(grp)
+            grp.start()
+        except Exception:
+            pass
+
     def _set_hover_shadow(self, widget, on: bool, radius: float = 14.0) -> None:
         """Micro-interaction: тень плавно проявляется/гаснет (мягкий ховер).
 
@@ -1412,27 +1481,23 @@ class BentoWindow(QMainWindow):
                     return super().eventFilter(obj, event)
                 except Exception:
                     return False
-            try:
-                is_opt = getattr(obj, "objectName", lambda: "")() == "ExamOpt"
-            except Exception:
-                is_opt = False
             if et == _QE.MouseButtonPress:
                 try:
                     is_btn = isinstance(obj, QPushButton)
                 except Exception:
                     is_btn = False
+                try:
+                    is_opt = getattr(obj, "objectName", lambda: "")() == "ExamOpt"
+                except Exception:
+                    is_opt = False
                 if is_btn or is_opt:
                     self._animate_press(obj)
             elif et in (_QE.HoverEnter, _QE.Enter):
                 if obj in _lift_btns:
                     self._set_hover_shadow(obj, True)
-                elif is_opt:
-                    self._set_hover_shadow(obj, True, radius=10.0)
             elif et in (_QE.HoverLeave, _QE.Leave):
                 if obj in _lift_btns:
                     self._set_hover_shadow(obj, False)
-                elif is_opt:
-                    self._set_hover_shadow(obj, False, radius=10.0)
         except Exception:
             pass
         try:

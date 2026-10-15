@@ -79,8 +79,7 @@ QLabel#ExamImg { background: transparent; border: none; }
 /* Сегмент-бар риска как .track на сайте */
 QFrame#RiskSeg { background: #E4E4E4; border-radius: 4px; min-height: 8px; max-height: 8px; }
 QRadioButton#ExamOpt { font-size: 16px; font-weight: 600; color: #1A1A1A; border-radius: 12px; padding: 10px 12px; border: 1px solid transparent; background: transparent; }
-QRadioButton#ExamOpt:hover { background: #FFFFFF; border: 1px solid #D8D4FF; }
-QRadioButton#ExamOpt:pressed { background: #ECECFB; border: 1px solid #D8D4FF; }
+QRadioButton#ExamOpt:hover { background: #F1F1EA; border: 1px solid #D8D4FF; }
 QRadioButton#ExamOpt[picked="true"] { background: #D8D4FF; font-weight: 900; color: #000000; }
 /* Точки-индикаторы: серые кружки, активная — зелёный овал (палитра без изменений) */
 QPushButton#ExamDot { background: #CFCFCF; border: none; border-radius: 5px;
